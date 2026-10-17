@@ -68,19 +68,19 @@ No signal? Photos wait on the phone and upload automatically next time the app i
 
 > The date folder is created automatically by *Create file* if it does not exist yet.
 
-### 2. Lock the flow URL into the app
+### 2. Team codes (add / remove without touching code)
 
-The flow URL contains a secret signature (`sig=`), so it is stored in `config.js` only **encrypted**, with the team code as the key.
-The team code must be the same value as the PIN in the flow's Condition.
+The flow URL contains a secret signature (`sig=`), so it is never stored in this repo in plain form.
+`pins.txt` holds one line per team code: the URL encrypted with that code. The app accepts a code if it unlocks a line.
 
-```bash
-FLOW_URL="https://...sig=..." TEAM_CODE="your-team-code" node tools/lock-url.mjs
-git commit -am "Update encrypted flow URL" && git push
-```
+**Add a code**
+1. In the flow's **Condition**, add the code (conditions joined with **OR**) and save.
+2. Open <https://kianoush-h.github.io/Valard-Camera-app/admin.html>, paste the flow URL and the new code, tap **Create line**.
+3. Tap **Copy line**, then **Open pins.txt** on GitHub, paste it on a new line at the bottom, **Commit changes**.
 
-Give crew members the app link and the team code. To revoke access: change the PIN in the flow, re-run the command with the new code, push, and send out the new code (crew enter it in **Settings → New team code**).
+**Remove a code:** delete its line in `pins.txt` and remove it from the flow. Phones using it are signed out the next time they open the app.
 
-Without a correct team code the app shows **NOT CONNECTED** and approved photos go to the iPhone share sheet (Save Image) instead.
+Without a valid code the app shows **NOT CONNECTED** and approved photos go to the iPhone share sheet (Save Image) instead.
 
 ### 3. GitHub Pages
 

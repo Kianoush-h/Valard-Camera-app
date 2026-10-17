@@ -1,0 +1,9 @@
+# Valard Camera team codes (encrypted). Safe to be public: each line is the upload address
+# locked with one team code. The codes themselves are never stored here.
+#
+# Add a code:    open https://kianoush-h.github.io/Valard-Camera-app/admin.html, create a line, paste it below.
+# Remove a code: delete its line (and remove it from the flow). Phones using it are signed out on next open.
+#
+# Do not change the salt line, or every code stops working.
+salt=lWbkXO9j5bPT803SsKzqBg== iter=310000
+

@@ -12,40 +12,70 @@
   };
   const settings = () => ({ name: store.get('name'), pin: store.get('pin') });
 
-  // The upload URL is stored encrypted in config.js (FLOW_ENC). The team code is the key:
-  // a correct code decrypts it, and the same code is the PIN the flow checks.
+  // The upload URL lives in pins.txt, encrypted once per team code (one line per code,
+  // made with admin.html). A code that decrypts a line is valid; the flow checks the same code.
+  // Deleting a line from pins.txt revokes that code on every phone.
   const flowUrl = () => store.get('flow') || (CFG.FLOW_URL || '').trim();
 
   const b64bytes = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 
-  // Resolves to the flow URL, or null if the code is wrong.
-  async function unlockFlow(code) {
-    const enc = CFG.FLOW_ENC;
-    if (!enc || !code || !(window.crypto && crypto.subtle)) return null;
+  // Resolves to { salt, iter, entries:[{iv,data}] } or null when offline / missing.
+  async function loadPins() {
     try {
-      const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']);
-      const key = await crypto.subtle.deriveKey(
-        { name: 'PBKDF2', salt: b64bytes(enc.salt), iterations: enc.iter, hash: 'SHA-256' },
-        base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
-      const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64bytes(enc.iv) }, key, b64bytes(enc.data));
-      const url = new TextDecoder().decode(plain);
-      return /^https:\/\//.test(url) ? url : null;
+      const r = await fetch('pins.txt?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) return null;
+      const out = { salt: '', iter: 0, entries: [] };
+      for (const raw of (await r.text()).split(/\r?\n/)) {
+        const line = raw.trim();
+        if (!line || line.startsWith('#')) continue;
+        const head = /^salt=(\S+)\s+iter=(\d+)/.exec(line);
+        if (head) { out.salt = head[1]; out.iter = +head[2]; continue; }
+        const m = /^([A-Za-z0-9+/=]+)\.([A-Za-z0-9+/=]+)/.exec(line);
+        if (m) out.entries.push({ iv: m[1], data: m[2] });
+      }
+      return out.salt && out.iter ? out : null;
     } catch (e) {
-      return null; // wrong code
+      return null;
     }
   }
 
-  async function connect(code) {
-    const url = await unlockFlow(code);
-    if (!url) return false;
-    store.set('flow', url); store.set('pin', code); store.set('enc', CFG.FLOW_ENC.data);
-    return true;
+  // Resolves to the flow URL, null if the code matches no line, or undefined if pins.txt is unreachable.
+  async function unlockFlow(code) {
+    if (!code || !(window.crypto && crypto.subtle)) return null;
+    const pins = await loadPins();
+    if (!pins) return undefined;
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt: b64bytes(pins.salt), iterations: pins.iter, hash: 'SHA-256' },
+      base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    for (const e of pins.entries) {
+      try {
+        const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64bytes(e.iv) }, key, b64bytes(e.data));
+        const url = new TextDecoder().decode(plain);
+        if (/^https:\/\//.test(url)) return url;
+      } catch (err) { /* not this line */ }
+    }
+    return null;
   }
 
-  // If a new app version ships a new encrypted URL, re-unlock it with the saved code.
+  // Resolves to 'ok', 'wrong' or 'offline'.
+  async function connect(code) {
+    const url = await unlockFlow(code);
+    if (url === undefined) return 'offline';
+    if (!url) return 'wrong';
+    store.set('flow', url); store.set('pin', code);
+    return 'ok';
+  }
+
+  // On launch: re-check the saved code against the latest pins.txt (picks up a new URL,
+  // and disconnects the phone if its code was removed). Offline: keep what we have.
   async function refreshFlow() {
     const s = settings();
-    if (CFG.FLOW_ENC && s.pin && store.get('enc') !== CFG.FLOW_ENC.data) await connect(s.pin);
+    if (!s.pin) return;
+    if ((await connect(s.pin)) === 'wrong') {
+      store.set('flow', ''); store.set('pin', '');
+      state.revoked = true;
+    }
   }
 
   const state = {
@@ -438,7 +468,15 @@
     const s = settings();
     if (!s.name || !flowUrl()) show('setup'); else goHome();
 
-    refreshFlow().then(refreshMode);
+    refreshFlow().then(() => {
+      refreshMode();
+      refreshBanner();
+      if (state.revoked) {
+        $('setup-name').value = settings().name;
+        $('setup-err').textContent = 'Your team code is no longer valid. Ask Kianoush for a new one.';
+        show('setup');
+      }
+    });
 
     $('setup-save').onclick = async () => {
       const name = $('setup-name').value.trim();
@@ -449,9 +487,11 @@
       requestCompass(); // needs the tap, so before any await
       $('setup-err').textContent = '';
       busy('Checking code…');
-      const ok = await connect(code);
+      const res = await connect(code);
       busy(null);
-      if (!ok) { fail('Wrong team code. Check it and try again.'); return; }
+      if (res === 'offline') { fail('No internet. Connect once to check your code, then try again.'); return; }
+      if (res !== 'ok') { fail('Wrong team code. Check it and try again.'); return; }
+      state.revoked = false;
       store.set('name', name);
       refreshMode();
       goHome();
@@ -505,7 +545,11 @@
       const name = $('set-name').value.trim();
       if (!name) { toast('Name cannot be empty', { error: true }); return; }
       const code = $('set-code').value.trim();
-      if (code && !(await connect(code))) { toast('Wrong team code', { ms: 3500, error: true }); return; }
+      if (code) {
+        const res = await connect(code);
+        if (res === 'offline') { toast('No internet. Try again with signal', { ms: 3500, error: true }); return; }
+        if (res !== 'ok') { toast('Wrong team code', { ms: 3500, error: true }); return; }
+      }
       store.set('name', name);
       $('set-code').value = '';
       state.pinError = false;

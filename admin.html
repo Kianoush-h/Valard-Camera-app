@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Valard Camera Admin</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+<style>
+  .screen { position: static; min-height: 100%; }
+  textarea {
+    font: 14px/1.45 ui-monospace, Menlo, Consolas, monospace; color: var(--text); background: var(--bg);
+    border: 1.5px solid var(--line); border-radius: var(--r-md); padding: 12px; width: 100%; min-height: 84px;
+    resize: vertical; word-break: break-all; -webkit-user-select: text; user-select: text;
+  }
+  textarea:focus { outline: 0; border-color: var(--red); box-shadow: 0 0 0 4px var(--red-soft); }
+  .steps { margin: 0; padding-left: 20px; color: var(--muted); font-size: 15px; display: grid; gap: 6px; }
+  .steps b { color: var(--text); }
+  .ok-msg { color: var(--good); margin: 0; font-size: 14px; }
+  .ok-msg:empty { display: none; }
+  h2 { margin: 0; font-size: 18px; }
+  a { color: #ff6b6f; }
+  .check { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--muted); }
+</style>
+</head>
+<body>
+<section class="screen">
+  <header class="topbar">
+    <div class="wordmark"><span class="wm-bar"></span>VALARD<small>ADMIN</small></div>
+  </header>
+
+  <div class="card">
+    <h2>Add a team code</h2>
+    <ol class="steps">
+      <li>Add the code to the flow's <b>Condition</b> (conditions joined with <b>OR</b>) and save the flow.</li>
+      <li>Fill in below and tap <b>Create line</b>.</li>
+      <li>Tap <b>Copy line</b>, then <b>Open pins.txt</b>, paste it on a new line at the bottom and <b>Commit changes</b>.</li>
+    </ol>
+    <p class="muted small">To remove a code: delete its line in pins.txt (and from the flow). Phones using it are signed out next time they open the app.</p>
+  </div>
+
+  <form class="card form" onsubmit="return false">
+    <label class="field">
+      <span class="field-label">Flow HTTP URL</span>
+      <textarea id="url" placeholder="https://…/invoke?…&amp;sig=…" spellcheck="false"></textarea>
+      <span class="check"><input type="checkbox" id="remember"> <label for="remember">Remember on this computer only</label></span>
+    </label>
+    <label class="field">
+      <span class="field-label">New team code</span>
+      <span class="input-wrap"><input id="code" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Exactly as in the flow"></span>
+      <span class="hint">8+ characters with letters and numbers. Case-sensitive.</span>
+    </label>
+    <label class="field">
+      <span class="field-label">Label (optional, visible in the repo)</span>
+      <span class="input-wrap"><input id="label" autocomplete="off" placeholder="e.g. Crew B, added Oct 18"></span>
+      <span class="hint">Never put the code itself in the label.</span>
+    </label>
+    <p id="err" class="err" role="alert"></p>
+    <button id="make" class="btn primary block" type="submit">Create line</button>
+    <textarea id="line" readonly placeholder="The line to paste appears here"></textarea>
+    <div class="preview-actions">
+      <button id="copy" class="btn" type="button">Copy line</button>
+      <a class="btn" href="https://github.com/Kianoush-h/Valard-Camera-app/edit/main/pins.txt" target="_blank" rel="noopener">Open pins.txt</a>
+    </div>
+    <p id="ok" class="ok-msg"></p>
+  </form>
+
+  <form class="card form" onsubmit="return false">
+    <h2>Check a code</h2>
+    <label class="field">
+      <span class="field-label">Code</span>
+      <span class="input-wrap"><input id="test-code" autocomplete="off" autocapitalize="off" spellcheck="false"></span>
+    </label>
+    <button id="test" class="btn block" type="submit">Check against live pins.txt</button>
+    <p id="test-out" class="muted"></p>
+  </form>
+
+  <p class="credit">Developed by Kianoush Haratiannejadi</p>
+</section>
+
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const enc = new TextEncoder();
+  const b64 = a => btoa(String.fromCharCode(...new Uint8Array(a)));
+  const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+  try {
+    const saved = localStorage.getItem('vc-admin.url');
+    if (saved) { $('url').value = saved; $('remember').checked = true; }
+  } catch (e) { /* ignore */ }
+
+  async function loadHeader() {
+    const r = await fetch('pins.txt?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('Could not load pins.txt (' + r.status + ')');
+    const text = await r.text();
+    const m = /^salt=(\S+)\s+iter=(\d+)/m.exec(text);
+    if (!m) throw new Error('pins.txt has no salt line');
+    return { salt: m[1], iter: +m[2], text };
+  }
+
+  async function keyFor(code, head, usage) {
+    const base = await crypto.subtle.importKey('raw', enc.encode(code), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'PBKDF2', salt: unb64(head.salt), iterations: head.iter, hash: 'SHA-256' },
+      base, { name: 'AES-GCM', length: 256 }, false, [usage]);
+  }
+
+  $('make').onclick = async () => {
+    $('err').textContent = ''; $('ok').textContent = ''; $('line').value = '';
+    const url = $('url').value.trim(), code = $('code').value.trim();
+    const label = $('label').value.trim().replace(/\s+/g, ' ');
+    if (!/^https:\/\/\S+sig=\S+/.test(url)) { $('err').textContent = 'Paste the full HTTP URL from the flow trigger (it contains "sig=").'; return; }
+    if (code.length < 8) { $('err').textContent = 'Use a code of at least 8 characters.'; return; }
+    if (label && label.includes(code)) { $('err').textContent = 'The label must not contain the code.'; return; }
+    try {
+      if ($('remember').checked) localStorage.setItem('vc-admin.url', url); else localStorage.removeItem('vc-admin.url');
+    } catch (e) { /* ignore */ }
+    $('make').disabled = true; $('make').textContent = 'Encrypting…';
+    try {
+      const head = await loadHeader();
+      const key = await keyFor(code, head, 'encrypt');
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const data = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(url));
+      $('line').value = `${b64(iv)}.${b64(data)}` + (label ? `  # ${label}` : '');
+      $('ok').textContent = 'Line created. Copy it and add it to pins.txt.';
+    } catch (e) {
+      $('err').textContent = e.message;
+    } finally {
+      $('make').disabled = false; $('make').textContent = 'Create line';
+    }
+  };
+
+  $('copy').onclick = () => {
+    if (!$('line').value) return;
+    $('line').select();
+    (navigator.clipboard ? navigator.clipboard.writeText($('line').value) : Promise.reject())
+      .catch(() => document.execCommand('copy'))
+      .finally(() => { $('copy').textContent = 'Copied'; setTimeout(() => { $('copy').textContent = 'Copy line'; }, 2000); });
+  };
+
+  $('test').onclick = async () => {
+    const code = $('test-code').value.trim();
+    if (!code) return;
+    $('test-out').textContent = 'Checking…';
+    try {
+      const head = await loadHeader();
+      const key = await keyFor(code, head, 'decrypt');
+      const lines = head.text.split(/\r?\n/).map(l => /^([A-Za-z0-9+/=]+)\.([A-Za-z0-9+/=]+)/.exec(l.trim())).filter(Boolean);
+      for (const m of lines) {
+        try {
+          await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(m[1]) }, key, unb64(m[2]));
+          $('test-out').textContent = 'Valid: this code unlocks the app (it must also be in the flow).';
+          return;
+        } catch (e) { /* next */ }
+      }
+      $('test-out').textContent = `Not valid: no line in pins.txt matches (${lines.length} code${lines.length === 1 ? '' : 's'} listed).`;
+    } catch (e) {
+      $('test-out').textContent = e.message;
+    }
+  };
+})();
+</script>
+</body>
+</html>
