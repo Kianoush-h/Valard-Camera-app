@@ -91,6 +91,8 @@ button { font: inherit; color: inherit; touch-action: manipulation; cursor: poin
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field-label { font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
 .hint { font-size: 13px; color: var(--muted); }
+.whoami { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 14px; background: var(--bg); border: 1.5px solid var(--line); border-radius: var(--r-md); font-size: 17px; font-weight: 600; }
+.whoami .ic { color: var(--muted); width: 20px; height: 20px; }
 .input-wrap {
   display: flex; align-items: center; gap: 10px; padding: 0 6px 0 14px; min-height: 52px;
   background: var(--bg); border: 1.5px solid var(--line); border-radius: var(--r-md);

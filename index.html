@@ -42,17 +42,12 @@
     <p class="lead">Site photos with time, GPS and address stamped on, uploaded to SharePoint automatically.</p>
   </div>
   <form class="card form" id="setup-form" data-enter onsubmit="return false">
-    <label class="field" for="setup-name">
-      <span class="field-label">Your name</span>
-      <span class="input-wrap"><svg class="ic"><use href="#i-user"/></svg>
-        <input id="setup-name" autocomplete="name" autocapitalize="words" placeholder="e.g. Kia H"></span>
-      <span class="hint">Printed on every photo you take.</span>
-    </label>
     <label class="field" for="setup-code">
-      <span class="field-label">Team code</span>
+      <span class="field-label">Your PIN</span>
       <span class="input-wrap"><svg class="ic"><use href="#i-key"/></svg>
         <input id="setup-code" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="From Kianoush">
-        <button type="button" class="reveal" data-reveal="setup-code" aria-label="Show code"><svg class="ic"><use href="#i-eye"/></svg></button></span>
+        <button type="button" class="reveal" data-reveal="setup-code" aria-label="Show PIN"><svg class="ic"><use href="#i-eye"/></svg></button></span>
+      <span class="hint">You only enter this once. Your name is stamped on every photo.</span>
     </label>
     <p id="setup-err" class="err" role="alert"></p>
     <button id="setup-save" class="btn primary block" type="submit">Get started</button>
@@ -139,18 +134,17 @@
     <span class="icon-btn-spacer"></span>
   </header>
   <form class="card form" data-enter onsubmit="return false">
-    <label class="field" for="set-name">
-      <span class="field-label">Your name</span>
-      <span class="input-wrap"><svg class="ic"><use href="#i-user"/></svg><input id="set-name" autocomplete="name" autocapitalize="words"></span>
-    </label>
+    <div class="field">
+      <span class="field-label">Signed in as</span>
+      <div class="whoami"><svg class="ic"><use href="#i-user"/></svg><span id="set-name"></span></div>
+    </div>
     <label class="field" for="set-code">
-      <span class="field-label">New team code</span>
+      <span class="field-label">New PIN</span>
       <span class="input-wrap"><svg class="ic"><use href="#i-key"/></svg>
-        <input id="set-code" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Leave empty to keep current">
-        <button type="button" class="reveal" data-reveal="set-code" aria-label="Show code"><svg class="ic"><use href="#i-eye"/></svg></button></span>
-      <span class="hint">Only needed if Kianoush sends you a new code.</span>
+        <input id="set-code" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Only if Kianoush gives you a new one">
+        <button type="button" class="reveal" data-reveal="set-code" aria-label="Show PIN"><svg class="ic"><use href="#i-eye"/></svg></button></span>
     </label>
-    <button id="set-save" class="btn primary block" type="submit">Save</button>
+    <button id="set-save" class="btn primary block" type="submit">Use new PIN</button>
   </form>
   <div class="card" data-enter>
     <div class="row-between"><span class="field-label">Uploads</span><span id="set-queue" class="muted"></span></div>

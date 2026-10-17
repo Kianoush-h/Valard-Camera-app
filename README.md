@@ -23,7 +23,7 @@ Developed by Kianoush Haratiannejadi.
 1. Open the app link above in **Safari** (it must be Safari).
 2. Tap **Share** (square with arrow) → **Add to Home Screen** → **Add**.
 3. Open **Valard Cam** from the home screen.
-4. Enter your name and the **team code** (ask Kianoush). You only do this once.
+4. Enter the **PIN** Kianoush gives you. You only do this once; your name comes with the PIN.
 5. Allow **Location** and **Compass** (Motion & Orientation) when asked.
 6. Tap the white button, take the photo, tap **Use Photo**, then **Approve & upload**.
 
@@ -68,19 +68,15 @@ No signal? Photos wait on the phone and upload automatically next time the app i
 
 > The date folder is created automatically by *Create file* if it does not exist yet.
 
-### 2. Team codes (add / remove without touching code)
+### 2. People and PINs
 
-The flow URL contains a secret signature (`sig=`), so it is never stored in this repo in plain form.
-`pins.txt` holds one line per team code: the URL encrypted with that code. The app accepts a code if it unlocks a line.
+1. Add the PIN to the flow's **Condition** (conditions joined with **OR**) and save the flow.
+2. Open <https://kianoush-h.github.io/Valard-Camera-app/admin.html>, log in with the admin password, **Add a person** (name + same PIN), **Save changes**. Live in about a minute.
+3. Give the person the app link and their PIN.
 
-**Add a code**
-1. In the flow's **Condition**, add the code (conditions joined with **OR**) and save.
-2. Open <https://kianoush-h.github.io/Valard-Camera-app/admin.html>, paste the flow URL and the new code, tap **Create line**.
-3. Tap **Copy line**, then **Open pins.txt** on GitHub, paste it on a new line at the bottom, **Commit changes**.
+To remove someone: **Remove** them on the admin page and **Save**, and delete their PIN from the flow. Their phone is signed out the next time the app opens.
 
-**Remove a code:** delete its line in `pins.txt` and remove it from the flow. Phones using it are signed out the next time they open the app.
-
-Without a valid code the app shows **NOT CONNECTED** and approved photos go to the iPhone share sheet (Save Image) instead.
+First admin login asks for a GitHub fine-grained token (this repo only, Contents read/write); it is stored only encrypted with the admin password in `admin.json`. `pins.json` holds only hashed PINs and names encrypted with each PIN.
 
 ### 3. GitHub Pages
 
@@ -90,6 +86,6 @@ Repo → **Settings → Pages** → Source: **Deploy from a branch** → Branch 
 
 ## Notes
 
-- Use a team code of 8+ characters with letters and numbers: the encrypted URL is public, so a short code could be guessed offline.
+- The upload address is in `config.js` (scrambled, not secret-grade). Uploads are protected by the PINs checked in the flow.
 - The stamp is drawn on the phone; photos only go to the Power Automate flow. Address lookup uses OpenStreetMap Nominatim, map tiles use Esri World Imagery.
 - To ship an update, bump `VERSION` in `config.js`.

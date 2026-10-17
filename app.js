@@ -12,68 +12,62 @@
   };
   const settings = () => ({ name: store.get('name'), pin: store.get('pin') });
 
-  // The upload URL lives in pins.txt, encrypted once per team code (one line per code,
-  // made with admin.html). A code that decrypts a line is valid; the flow checks the same code.
-  // Deleting a line from pins.txt revokes that code on every phone.
-  const flowUrl = () => store.get('flow') || (CFG.FLOW_URL || '').trim();
+  // Upload address: built into the app (lightly scrambled). PINs are checked by the flow.
+  // pins.json (written by admin.html) maps each PIN to the person's name. It stores only a
+  // PBKDF2 hash of each PIN, and the name encrypted with that PIN.
+  const flowUrl = () => {
+    if (CFG.FLOW_X) { try { return atob(CFG.FLOW_X).split('').reverse().join(''); } catch (e) { /* bad config */ } }
+    return (CFG.FLOW_URL || '').trim();
+  };
 
   const b64bytes = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  const hex = a => Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
 
-  // Resolves to { salt, iter, entries:[{iv,data}] } or null when offline / missing.
   async function loadPins() {
     try {
-      const r = await fetch('pins.txt?t=' + Date.now(), { cache: 'no-store' });
+      const r = await fetch('pins.json?t=' + Date.now(), { cache: 'no-store' });
       if (!r.ok) return null;
-      const out = { salt: '', iter: 0, entries: [] };
-      for (const raw of (await r.text()).split(/\r?\n/)) {
-        const line = raw.trim();
-        if (!line || line.startsWith('#')) continue;
-        const head = /^salt=(\S+)\s+iter=(\d+)/.exec(line);
-        if (head) { out.salt = head[1]; out.iter = +head[2]; continue; }
-        const m = /^([A-Za-z0-9+/=]+)\.([A-Za-z0-9+/=]+)/.exec(line);
-        if (m) out.entries.push({ iv: m[1], data: m[2] });
-      }
-      return out.salt && out.iter ? out : null;
+      const j = await r.json();
+      return j && j.salt && j.iter && j.entries ? j : null;
     } catch (e) {
       return null;
     }
   }
 
-  // Resolves to the flow URL, null if the code matches no line, or undefined if pins.txt is unreachable.
-  async function unlockFlow(code) {
-    if (!code || !(window.crypto && crypto.subtle)) return null;
+  // Resolves to { name } for a known PIN, null for an unknown PIN, undefined when offline.
+  async function lookupPin(pin) {
+    if (!pin || !(window.crypto && crypto.subtle)) return null;
     const pins = await loadPins();
     if (!pins) return undefined;
-    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']);
-    const key = await crypto.subtle.deriveKey(
-      { name: 'PBKDF2', salt: b64bytes(pins.salt), iterations: pins.iter, hash: 'SHA-256' },
-      base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
-    for (const e of pins.entries) {
-      try {
-        const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64bytes(e.iv) }, key, b64bytes(e.data));
-        const url = new TextDecoder().decode(plain);
-        if (/^https:\/\//.test(url)) return url;
-      } catch (err) { /* not this line */ }
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']);
+    const bits = new Uint8Array(await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', salt: b64bytes(pins.salt), iterations: pins.iter, hash: 'SHA-256' }, base, 512));
+    const entry = pins.entries[hex(bits.slice(0, 16))];
+    if (!entry) return null;
+    try {
+      const key = await crypto.subtle.importKey('raw', bits.slice(32, 64), 'AES-GCM', false, ['decrypt']);
+      const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64bytes(entry.iv) }, key, b64bytes(entry.data));
+      return JSON.parse(new TextDecoder().decode(plain));
+    } catch (e) {
+      return null;
     }
-    return null;
   }
 
   // Resolves to 'ok', 'wrong' or 'offline'.
-  async function connect(code) {
-    const url = await unlockFlow(code);
-    if (url === undefined) return 'offline';
-    if (!url) return 'wrong';
-    store.set('flow', url); store.set('pin', code);
+  async function signIn(pin) {
+    const who = await lookupPin(pin);
+    if (who === undefined) return 'offline';
+    if (!who || !who.name) return 'wrong';
+    store.set('pin', pin); store.set('name', who.name);
     return 'ok';
   }
 
-  // On launch: re-check the saved code against the latest pins.txt (picks up a new URL,
-  // and disconnects the phone if its code was removed). Offline: keep what we have.
-  async function refreshFlow() {
+  // On launch: re-check the saved PIN (picks up name changes, signs out removed PINs).
+  async function refreshAccess() {
     const s = settings();
     if (!s.pin) return;
-    if ((await connect(s.pin)) === 'wrong') {
-      store.set('flow', ''); store.set('pin', '');
+    if ((await signIn(s.pin)) === 'wrong') {
+      store.set('pin', ''); store.set('name', '');
       state.revoked = true;
     }
   }
@@ -429,7 +423,7 @@
     try { n = (await DB.all()).length; } catch (e) { /* ignore */ }
     const plural = `${n} photo${n > 1 ? 's' : ''}`;
     let msg, kind, icon;
-    if (state.pinError && n) { msg = `Upload rejected. Enter the new team code in Settings (${plural} waiting)`; kind = 'error'; icon = 'i-alert'; }
+    if (state.pinError && n) { msg = `Upload rejected: your PIN is not active in the flow (${plural} waiting)`; kind = 'error'; icon = 'i-alert'; }
     else if (state.uploading && state.uploadProgress) { msg = state.uploadProgress; kind = 'uploading'; icon = 'i-cloud'; }
     else if (n) {
       msg = navigator.onLine === false ? `${plural} waiting. Will upload when you have signal` : `${plural} waiting to upload`;
@@ -466,35 +460,34 @@
     }
 
     const s = settings();
-    if (!s.name || !flowUrl()) show('setup'); else goHome();
+    if (!s.pin || !s.name) show('setup'); else goHome();
 
-    refreshFlow().then(() => {
+    refreshAccess().then(() => {
       refreshMode();
       refreshBanner();
+      tickClock();
       if (state.revoked) {
-        $('setup-name').value = settings().name;
-        $('setup-err').textContent = 'Your team code is no longer valid. Ask Kianoush for a new one.';
+        $('setup-err').textContent = 'Your PIN is no longer active. Ask Kianoush for a new one.';
         show('setup');
       }
     });
 
     $('setup-save').onclick = async () => {
-      const name = $('setup-name').value.trim();
-      const code = $('setup-code').value.trim();
+      const pin = $('setup-code').value.trim();
       const fail = msg => { $('setup-err').textContent = msg; UI.shake($('setup-form')); };
-      if (!name) { fail('Please enter your name.'); return; }
-      if (!code) { fail('Please enter the team code.'); return; }
+      if (!pin) { fail('Please enter your PIN.'); return; }
       requestCompass(); // needs the tap, so before any await
       $('setup-err').textContent = '';
-      busy('Checking code…');
-      const res = await connect(code);
+      busy('Checking PIN…');
+      const res = await signIn(pin);
       busy(null);
-      if (res === 'offline') { fail('No internet. Connect once to check your code, then try again.'); return; }
-      if (res !== 'ok') { fail('Wrong team code. Check it and try again.'); return; }
+      if (res === 'offline') { fail('No internet. Connect once to check your PIN, then try again.'); return; }
+      if (res !== 'ok') { fail('PIN not recognised. Check it and try again.'); return; }
       state.revoked = false;
-      store.set('name', name);
+      $('setup-code').value = '';
       refreshMode();
       goHome();
+      toast('Welcome, ' + settings().name.split(' ')[0]);
     };
 
     $('compass-enable').onclick = requestCompass;
@@ -535,22 +528,19 @@
     $('save-copy').onclick = () => { if (state.current) saveToPhone(state.current.item); };
 
     $('open-settings').onclick = () => {
-      const s2 = settings();
-      $('set-name').value = s2.name; $('set-code').value = '';
+      $('set-name').textContent = settings().name;
+      $('set-code').value = '';
       refreshBanner();
       show('settings');
     };
     $('close-settings').onclick = () => show('home');
     $('set-save').onclick = async () => {
-      const name = $('set-name').value.trim();
-      if (!name) { toast('Name cannot be empty', { error: true }); return; }
       const code = $('set-code').value.trim();
-      if (code) {
-        const res = await connect(code);
-        if (res === 'offline') { toast('No internet. Try again with signal', { ms: 3500, error: true }); return; }
-        if (res !== 'ok') { toast('Wrong team code', { ms: 3500, error: true }); return; }
-      }
-      store.set('name', name);
+      if (!code) { toast('Enter the new PIN first', { error: true }); return; }
+      const res = await signIn(code);
+      if (res === 'offline') { toast('No internet. Try again with signal', { ms: 3500, error: true }); return; }
+      if (res !== 'ok') { toast('PIN not recognised', { ms: 3500, error: true }); return; }
+      $('set-name').textContent = settings().name;
       $('set-code').value = '';
       state.pinError = false;
       refreshMode();
