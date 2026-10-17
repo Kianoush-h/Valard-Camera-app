@@ -1,0 +1,7 @@
+# Sample photos stay local, never pushed to the public repo
+OneDrive_*/
+*.zip
+*.jpg
+*.jpeg
+*.heic
+test/

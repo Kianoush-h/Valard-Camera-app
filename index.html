@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Valard Camera</title>
+<meta name="theme-color" content="#1f1f1f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Valard Cam">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- One-time setup -->
+<section id="setup" class="screen" hidden>
+  <div class="card">
+    <img src="icons/icon-192.png" class="logo" alt="">
+    <h1><b class="red">Valard</b> Camera</h1>
+    <p class="muted">One-time setup. Your name is stamped on every photo.</p>
+    <label>Your name
+      <input id="setup-name" autocomplete="name" placeholder="e.g. Kia H">
+    </label>
+    <label id="setup-pin-label">Team PIN
+      <input id="setup-pin" type="password" autocomplete="off" placeholder="From your supervisor">
+    </label>
+    <button id="setup-save" class="btn primary">Get started</button>
+    <p id="setup-err" class="err"></p>
+  </div>
+  <p class="credit app-credit"></p>
+</section>
+
+<!-- Home / capture -->
+<section id="home" class="screen" hidden>
+  <header class="topbar">
+    <div class="brand"><b>Valard</b> Camera</div>
+    <button id="open-settings" class="icon-btn" aria-label="Settings">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </header>
+
+  <div class="status">
+    <div class="row"><span class="dot" id="gps-dot"></span><span id="gps-text">Finding location…</span></div>
+    <div class="row addr" id="addr-text"></div>
+    <div class="row"><span id="compass-text">Compass: waiting…</span>
+      <button id="compass-enable" class="chip" hidden>Enable compass</button></div>
+  </div>
+
+  <div class="banner" id="queue-banner" hidden></div>
+
+  <div class="shutter-wrap">
+    <button id="shutter" class="shutter" aria-label="Take photo"><span></span></button>
+    <p class="muted">Tap to take a photo</p>
+  </div>
+
+  <p class="credit app-credit"></p>
+  <div id="testmode" class="testmode" hidden>TEST MODE: no upload link set, photos are saved to your phone instead</div>
+</section>
+
+<!-- Preview / approve -->
+<section id="preview" class="screen" hidden>
+  <div class="preview-img"><img id="preview-img" alt="Stamped photo preview"></div>
+  <div class="preview-actions">
+    <button id="retake" class="btn">Retake</button>
+    <button id="approve" class="btn primary">Approve &amp; upload</button>
+  </div>
+  <button id="save-copy" class="link-btn">Save a copy to my phone</button>
+</section>
+
+<!-- Settings -->
+<section id="settings" class="screen" hidden>
+  <header class="topbar">
+    <button id="close-settings" class="link-btn back">‹ Back</button>
+    <div class="brand">Settings</div>
+    <span></span>
+  </header>
+  <div class="card">
+    <label>Your name <input id="set-name" autocomplete="name"></label>
+    <label>Team PIN <input id="set-pin" type="password" autocomplete="off"></label>
+    <button id="set-save" class="btn primary">Save</button>
+    <hr>
+    <p id="set-queue" class="muted"></p>
+    <button id="set-retry" class="btn">Upload waiting photos now</button>
+    <p class="muted small" id="set-version"></p>
+  </div>
+  <p class="credit app-credit"></p>
+</section>
+
+<div id="busy" class="busy" hidden><div class="spinner"></div><p id="busy-text">Stamping photo…</p></div>
+<div id="toast" class="toast" hidden></div>
+<input id="camera-input" type="file" accept="image/*" capture="environment" hidden>
+
+<script src="config.js"></script>
+<script src="stamp.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
