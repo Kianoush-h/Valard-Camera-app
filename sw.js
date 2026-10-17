@@ -1,5 +1,5 @@
 // Offline support: serve app files from cache, refresh them in the background.
-const CACHE = 'valard-camera-v3';
+const CACHE = 'valard-camera-v4';
 const ASSETS = [
   './', 'index.html', 'style.css', 'app.js', 'stamp.js', 'config.js', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',
@@ -19,13 +19,15 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   // Only app files: skip uploads, map tiles, geocoding and the network-time check (has a query string).
   if (e.request.method !== 'GET' || url.origin !== location.origin || url.search) return;
+  // Network first so phones always get the latest version; cache only when offline / slow signal.
   e.respondWith(caches.open(CACHE).then(async cache => {
     const cached = await cache.match(e.request);
-    const fresh = fetch(e.request).then(r => {
+    const fresh = fetch(e.request, { cache: 'no-cache' }).then(r => {
       if (r.ok) cache.put(e.request, r.clone());
       return r;
-    }).catch(() => cached);
-    if (cached) { e.waitUntil(fresh); return cached; }
-    return fresh;
+    });
+    if (!cached) return fresh;
+    const timeout = new Promise(res => setTimeout(() => res(cached), 4000));
+    return Promise.race([fresh.catch(() => cached), timeout]);
   }));
 });
