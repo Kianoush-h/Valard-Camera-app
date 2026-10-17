@@ -12,22 +12,40 @@
   };
   const settings = () => ({ name: store.get('name'), pin: store.get('pin') });
 
-  // The upload URL and PIN are not in this public repo. They arrive in a setup code
-  // ("VC1-" + base64url JSON {u, p}) made with setup.html and shared privately with the crew.
+  // The upload URL is stored encrypted in config.js (FLOW_ENC). The team code is the key:
+  // a correct code decrypts it, and the same code is the PIN the flow checks.
   const flowUrl = () => store.get('flow') || (CFG.FLOW_URL || '').trim();
 
-  function decodeSetupCode(code) {
-    const m = /VC1-([A-Za-z0-9_-]+)/.exec(code.replace(/\s+/g, ''));
-    if (!m) return null;
+  const b64bytes = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+  // Resolves to the flow URL, or null if the code is wrong.
+  async function unlockFlow(code) {
+    const enc = CFG.FLOW_ENC;
+    if (!enc || !code || !(window.crypto && crypto.subtle)) return null;
     try {
-      const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
-      const json = decodeURIComponent(escape(atob(b64 + '==='.slice((b64.length + 3) % 4))));
-      const o = JSON.parse(json);
-      if (typeof o.u !== 'string' || !/^https:\/\//.test(o.u) || !o.p) return null;
-      return { url: o.u, pin: String(o.p) };
+      const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']);
+      const key = await crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt: b64bytes(enc.salt), iterations: enc.iter, hash: 'SHA-256' },
+        base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+      const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64bytes(enc.iv) }, key, b64bytes(enc.data));
+      const url = new TextDecoder().decode(plain);
+      return /^https:\/\//.test(url) ? url : null;
     } catch (e) {
-      return null;
+      return null; // wrong code
     }
+  }
+
+  async function connect(code) {
+    const url = await unlockFlow(code);
+    if (!url) return false;
+    store.set('flow', url); store.set('pin', code); store.set('enc', CFG.FLOW_ENC.data);
+    return true;
+  }
+
+  // If a new app version ships a new encrypted URL, re-unlock it with the saved code.
+  async function refreshFlow() {
+    const s = settings();
+    if (CFG.FLOW_ENC && s.pin && store.get('enc') !== CFG.FLOW_ENC.data) await connect(s.pin);
   }
 
   const state = {
@@ -371,7 +389,7 @@
     try { n = (await DB.all()).length; } catch (e) { /* ignore */ }
     const b = $('queue-banner');
     let msg = '', cls = 'banner';
-    if (state.pinError && n) { msg = `Upload rejected: ask for a new setup code and enter it in Settings (${n} waiting)`; cls += ' err'; }
+    if (state.pinError && n) { msg = `Upload rejected: ask for the new team code and enter it in Settings (${n} waiting)`; cls += ' err'; }
     else if (state.uploading && state.uploadProgress) msg = state.uploadProgress;
     else if (n) msg = navigator.onLine === false
       ? `${n} photo${n > 1 ? 's' : ''} waiting. Will upload when you have signal`
@@ -404,14 +422,21 @@
     const s = settings();
     if (!s.name || !flowUrl()) show('setup'); else goHome();
 
-    $('setup-save').onclick = () => {
+    refreshFlow().then(refreshMode);
+
+    $('setup-save').onclick = async () => {
       const name = $('setup-name').value.trim();
-      const setup = decodeSetupCode($('setup-code').value);
+      const code = $('setup-code').value.trim();
       if (!name) { $('setup-err').textContent = 'Please enter your name.'; return; }
-      if (!setup) { $('setup-err').textContent = 'That setup code is not valid. Copy the whole code and try again.'; return; }
-      store.set('name', name); store.set('flow', setup.url); store.set('pin', setup.pin);
+      if (!code) { $('setup-err').textContent = 'Please enter the team code.'; return; }
+      requestCompass(); // needs the tap, so before any await
+      $('setup-err').textContent = '';
+      busy('Checking code…');
+      const ok = await connect(code);
+      busy(null);
+      if (!ok) { $('setup-err').textContent = 'Wrong team code. Check it and try again.'; return; }
+      store.set('name', name);
       refreshMode();
-      requestCompass();
       goHome();
     };
 
@@ -459,14 +484,13 @@
       show('settings');
     };
     $('close-settings').onclick = () => show('home');
-    $('set-save').onclick = () => {
+    $('set-save').onclick = async () => {
       const name = $('set-name').value.trim();
       if (!name) { toast('Name cannot be empty'); return; }
       const code = $('set-code').value.trim();
-      const setup = code ? decodeSetupCode(code) : null;
-      if (code && !setup) { toast('That setup code is not valid', 3500); return; }
+      if (code && !(await connect(code))) { toast('Wrong team code', 3500); return; }
       store.set('name', name);
-      if (setup) { store.set('flow', setup.url); store.set('pin', setup.pin); $('set-code').value = ''; }
+      $('set-code').value = '';
       state.pinError = false;
       refreshMode();
       toast('Saved');

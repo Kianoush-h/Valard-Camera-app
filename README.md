@@ -23,7 +23,7 @@ Developed by Kianoush Haratiannejadi.
 1. Open the app link above in **Safari** (it must be Safari).
 2. Tap **Share** (square with arrow) → **Add to Home Screen** → **Add**.
 3. Open **Valard Cam** from the home screen.
-4. Enter your name and paste the **setup code** (ask Kianoush). You only do this once.
+4. Enter your name and the **team code** (ask Kianoush). You only do this once.
 5. Allow **Location** and **Compass** (Motion & Orientation) when asked.
 6. Tap the white button, take the photo, tap **Use Photo**, then **Approve & upload**.
 
@@ -68,17 +68,19 @@ No signal? Photos wait on the phone and upload automatically next time the app i
 
 > The date folder is created automatically by *Create file* if it does not exist yet.
 
-### 2. Create the setup code
+### 2. Lock the flow URL into the app
 
-The flow URL contains a secret signature (`sig=`), so it is **never** stored in this public repo.
+The flow URL contains a secret signature (`sig=`), so it is stored in `config.js` only **encrypted**, with the team code as the key.
+The team code must be the same value as the PIN in the flow's Condition.
 
-1. Open <https://kianoush-h.github.io/Valard-Camera-app/setup.html>
-2. Paste the flow's HTTP URL and the Team PIN → **Create setup code** (built in your browser, nothing is sent).
-3. Send the `VC1-…` code to crew members privately (Teams chat / email).
+```bash
+FLOW_URL="https://...sig=..." TEAM_CODE="your-team-code" node tools/lock-url.mjs
+git commit -am "Update encrypted flow URL" && git push
+```
 
-To revoke access (e.g. a code leaked): change the PIN in the flow's Condition, make a new code, and send it out. Crew members paste it in **Settings → New setup code**.
+Give crew members the app link and the team code. To revoke access: change the PIN in the flow, re-run the command with the new code, push, and send out the new code (crew enter it in **Settings → New team code**).
 
-Without a setup code the app shows **NOT CONNECTED** and approved photos go to the iPhone share sheet (Save Image) instead.
+Without a correct team code the app shows **NOT CONNECTED** and approved photos go to the iPhone share sheet (Save Image) instead.
 
 ### 3. GitHub Pages
 
@@ -88,6 +90,6 @@ Repo → **Settings → Pages** → Source: **Deploy from a branch** → Branch 
 
 ## Notes
 
-- The setup code is only encoded, not encrypted: treat it like a password and share it privately.
+- Use a team code of 8+ characters with letters and numbers: the encrypted URL is public, so a short code could be guessed offline.
 - The stamp is drawn on the phone; photos only go to the Power Automate flow. Address lookup uses OpenStreetMap Nominatim, map tiles use Esri World Imagery.
 - To ship an update, bump `VERSION` in `config.js`.
