@@ -3,7 +3,6 @@
   'use strict';
 
   const CFG = window.VALARD_CONFIG || {};
-  const FLOW_URL = (CFG.FLOW_URL || '').trim();
   const ZOOM = CFG.MAP_ZOOM || 16;
   const $ = id => document.getElementById(id);
 
@@ -12,6 +11,24 @@
     set(k, v) { try { localStorage.setItem('vc.' + k, v); } catch (e) { /* ignore */ } },
   };
   const settings = () => ({ name: store.get('name'), pin: store.get('pin') });
+
+  // The upload URL and PIN are not in this public repo. They arrive in a setup code
+  // ("VC1-" + base64url JSON {u, p}) made with setup.html and shared privately with the crew.
+  const flowUrl = () => store.get('flow') || (CFG.FLOW_URL || '').trim();
+
+  function decodeSetupCode(code) {
+    const m = /VC1-([A-Za-z0-9_-]+)/.exec(code.replace(/\s+/g, ''));
+    if (!m) return null;
+    try {
+      const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+      const json = decodeURIComponent(escape(atob(b64 + '==='.slice((b64.length + 3) % 4))));
+      const o = JSON.parse(json);
+      if (typeof o.u !== 'string' || !/^https:\/\//.test(o.u) || !o.p) return null;
+      return { url: o.u, pin: String(o.p) };
+    } catch (e) {
+      return null;
+    }
+  }
 
   const state = {
     pos: null,
@@ -308,7 +325,7 @@
       content: await blobToBase64(item.blob),
     });
     try {
-      const r = await fetchT(FLOW_URL, {
+      const r = await fetchT(flowUrl(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -322,7 +339,7 @@
   }
 
   async function processQueue() {
-    if (state.uploading || !FLOW_URL) return;
+    if (state.uploading || !flowUrl()) return;
     state.uploading = true;
     try {
       const items = (await DB.all()).sort((a, b) => a.created - b.created);
@@ -354,7 +371,7 @@
     try { n = (await DB.all()).length; } catch (e) { /* ignore */ }
     const b = $('queue-banner');
     let msg = '', cls = 'banner';
-    if (state.pinError && n) { msg = `Upload rejected: check your Team PIN in Settings (${n} waiting)`; cls += ' err'; }
+    if (state.pinError && n) { msg = `Upload rejected: ask for a new setup code and enter it in Settings (${n} waiting)`; cls += ' err'; }
     else if (state.uploading && state.uploadProgress) msg = state.uploadProgress;
     else if (n) msg = navigator.onLine === false
       ? `${n} photo${n > 1 ? 's' : ''} waiting. Will upload when you have signal`
@@ -375,22 +392,25 @@
   }
 
   function init() {
-    $('testmode').hidden = !!FLOW_URL;
-    $('setup-pin-label').hidden = !FLOW_URL;
-    $('set-version').textContent = 'Version ' + (CFG.VERSION || '') + (FLOW_URL ? '' : ' · test mode');
+    const refreshMode = () => {
+      $('testmode').hidden = !!flowUrl();
+      $('set-version').textContent = 'Version ' + (CFG.VERSION || '') + (flowUrl() ? ' · connected to SharePoint' : ' · not connected');
+    };
+    refreshMode();
     for (const el of document.querySelectorAll('.app-credit')) {
       el.textContent = `Developed by ${CFG.AUTHOR || 'Kianoush Haratiannejadi'} · v${CFG.VERSION || ''}`;
     }
 
     const s = settings();
-    if (!s.name || (FLOW_URL && !s.pin)) show('setup'); else goHome();
+    if (!s.name || !flowUrl()) show('setup'); else goHome();
 
     $('setup-save').onclick = () => {
       const name = $('setup-name').value.trim();
-      const pin = $('setup-pin').value.trim();
+      const setup = decodeSetupCode($('setup-code').value);
       if (!name) { $('setup-err').textContent = 'Please enter your name.'; return; }
-      if (FLOW_URL && !pin) { $('setup-err').textContent = 'Please enter the Team PIN.'; return; }
-      store.set('name', name); store.set('pin', pin);
+      if (!setup) { $('setup-err').textContent = 'That setup code is not valid. Copy the whole code and try again.'; return; }
+      store.set('name', name); store.set('flow', setup.url); store.set('pin', setup.pin);
+      refreshMode();
       requestCompass();
       goHome();
     };
@@ -413,7 +433,7 @@
     $('approve').onclick = async () => {
       const c = state.current;
       if (!c) return;
-      if (!FLOW_URL) {
+      if (!flowUrl()) {
         await saveToPhone(c.item);
         clearPreview(); show('home');
         return;
@@ -434,7 +454,7 @@
 
     $('open-settings').onclick = () => {
       const s2 = settings();
-      $('set-name').value = s2.name; $('set-pin').value = s2.pin;
+      $('set-name').value = s2.name; $('set-code').value = '';
       refreshBanner();
       show('settings');
     };
@@ -442,8 +462,13 @@
     $('set-save').onclick = () => {
       const name = $('set-name').value.trim();
       if (!name) { toast('Name cannot be empty'); return; }
-      store.set('name', name); store.set('pin', $('set-pin').value.trim());
+      const code = $('set-code').value.trim();
+      const setup = code ? decodeSetupCode(code) : null;
+      if (code && !setup) { toast('That setup code is not valid', 3500); return; }
+      store.set('name', name);
+      if (setup) { store.set('flow', setup.url); store.set('pin', setup.pin); $('set-code').value = ''; }
       state.pinError = false;
+      refreshMode();
       toast('Saved');
       processQueue();
     };

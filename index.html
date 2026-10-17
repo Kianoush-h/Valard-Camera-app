@@ -25,8 +25,8 @@
     <label>Your name
       <input id="setup-name" autocomplete="name" placeholder="e.g. Kia H">
     </label>
-    <label id="setup-pin-label">Team PIN
-      <input id="setup-pin" type="password" autocomplete="off" placeholder="From your supervisor">
+    <label>Setup code
+      <input id="setup-code" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Paste the code from Kianoush (VC1-…)">
     </label>
     <button id="setup-save" class="btn primary">Get started</button>
     <p id="setup-err" class="err"></p>
@@ -58,7 +58,7 @@
   </div>
 
   <p class="credit app-credit"></p>
-  <div id="testmode" class="testmode" hidden>TEST MODE: no upload link set, photos are saved to your phone instead</div>
+  <div id="testmode" class="testmode" hidden>NOT CONNECTED: enter a setup code in Settings. Photos are saved to your phone for now.</div>
 </section>
 
 <!-- Preview / approve -->
@@ -80,7 +80,9 @@
   </header>
   <div class="card">
     <label>Your name <input id="set-name" autocomplete="name"></label>
-    <label>Team PIN <input id="set-pin" type="password" autocomplete="off"></label>
+    <label>New setup code (only if asked to change it)
+      <input id="set-code" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Leave empty to keep the current one">
+    </label>
     <button id="set-save" class="btn primary">Save</button>
     <hr>
     <p id="set-queue" class="muted"></p>
