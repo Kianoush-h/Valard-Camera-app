@@ -62,20 +62,10 @@
 
   // ---------- UI helpers
 
-  function show(id) {
-    for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== id;
-    window.scrollTo(0, 0);
-  }
-  function toast(msg, ms) {
-    const t = $('toast');
-    t.textContent = msg; t.hidden = false;
-    clearTimeout(toast.t);
-    toast.t = setTimeout(() => { t.hidden = true; }, ms || 2600);
-  }
-  function busy(msg) {
-    $('busy').hidden = !msg;
-    if (msg) $('busy-text').textContent = msg;
-  }
+  // Screen changes, toasts and overlays are animated in ui.js.
+  const show = id => UI.go(id);
+  const toast = (msg, opts) => UI.toast(msg, opts);
+  const busy = msg => UI.busy(msg);
   function fetchT(url, opts, ms) {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), ms);
@@ -95,18 +85,35 @@
     $('gps-text').textContent = text;
   }
 
+  // Live clock on the home screen: exactly what will be stamped.
+  function tickClock() {
+    const d = new Date();
+    $('clock-time').textContent = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' }).replace(/\u202f/g, ' ');
+    const tz = Stamp.formatDate(d).split(' ').pop(); // "... 3:32:24 PM ADT" -> "ADT"
+    $('clock-date').textContent = d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' }) + ' · ' + tz;
+    const h = d.getHours();
+    const first = (settings().name || '').split(' ')[0];
+    $('hello').textContent = (h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening') + (first ? ', ' + first : '');
+  }
+
   function startGeo() {
     if (state.geoStarted) return;
     state.geoStarted = true;
-    if (!('geolocation' in navigator)) { setGps('bad', 'Location not supported on this device'); return; }
+    if (!('geolocation' in navigator)) { setGps('bad', 'No GPS'); return; }
     navigator.geolocation.watchPosition(p => {
       state.pos = p;
       const acc = Math.round(p.coords.accuracy);
-      setGps(acc <= 25 ? 'good' : acc <= 100 ? 'ok' : 'bad',
-        `GPS ±${acc} m · ${p.coords.latitude.toFixed(5)}, ${p.coords.longitude.toFixed(5)}`);
+      setGps(acc <= 25 ? 'good' : acc <= 100 ? 'ok' : 'bad', `GPS ±${acc} m`);
+      $('coords-text').textContent = Stamp.formatDMS(p.coords.latitude, p.coords.longitude);
       prefetchPlace(p.coords.latitude, p.coords.longitude);
     }, e => {
-      setGps('bad', e.code === 1 ? 'Location blocked. Allow it in iPhone Settings › Privacy › Location' : 'Searching for GPS…');
+      if (e.code === 1) {
+        setGps('bad', 'Location blocked');
+        $('addr-text').textContent = 'Location is off';
+        $('coords-text').textContent = 'Allow it in iPhone Settings › Privacy › Location Services';
+      } else {
+        setGps('ok', 'GPS searching');
+      }
     }, { enableHighAccuracy: true, maximumAge: 3000, timeout: 30000 });
   }
 
@@ -141,7 +148,7 @@
     geocode(lat, lon).then(lines => {
       state.addr = { at: [lat, lon], lines };
       state.placeAt = [lat, lon];
-      $('addr-text').textContent = lines.join(', ');
+      UI.updateText($('addr-text'), lines.join(', '));
     }).catch(() => { /* retry on a later fix */ });
     Stamp.loadMap(lat, lon, ZOOM).catch(() => {});
   }
@@ -180,7 +187,8 @@
     state.heading = ((h + so) % 360 + 360) % 360;
     state.headingAt = Date.now();
     $('compass-enable').hidden = true;
-    $('compass-text').textContent = 'Compass: ' + Stamp.formatHeading(state.heading);
+    $('compass-text').textContent = Stamp.formatHeading(state.heading);
+    UI.setHeading(state.heading);
   }
 
   function listenCompass() {
@@ -199,16 +207,16 @@
     if (!needsCompassPermission()) { listenCompass(); return; }
     DeviceOrientationEvent.requestPermission().then(r => {
       if (r === 'granted') listenCompass();
-      else $('compass-text').textContent = 'Compass: permission denied';
+      else $('compass-text').textContent = 'Compass off';
     }).catch(() => {});
   }
 
   function initCompass() {
-    if (!('DeviceOrientationEvent' in window)) { $('compass-text').textContent = 'Compass: not available'; return; }
+    if (!('DeviceOrientationEvent' in window)) { $('compass-text').textContent = 'No compass'; return; }
     listenCompass(); // works if permission was already granted, or on Android
     setTimeout(() => {
       if (state.heading === null && needsCompassPermission()) {
-        $('compass-text').textContent = 'Compass: off';
+        $('compass-text').textContent = 'Compass off';
         $('compass-enable').hidden = false;
       }
     }, 1500);
@@ -270,9 +278,10 @@
       const url = URL.createObjectURL(blob);
       state.current = { blob, url, item };
       $('preview-img').src = url;
+      $('preview-dest').textContent = `Photos › ${item.folder}`;
       show('preview');
     } catch (err) {
-      toast('Could not process photo: ' + err.message, 4000);
+      toast('Could not process photo: ' + err.message, { ms: 4000, error: true });
     } finally {
       if (img) URL.revokeObjectURL(img.src);
       busy(null);
@@ -369,7 +378,8 @@
         if (res === 'ok') {
           await DB.del(items[i].id);
           state.pinError = false;
-          toast('✓ Uploaded to SharePoint');
+          toast('Uploaded to SharePoint');
+          UI.pop($('sync-ic'));
         } else {
           if (res === 'pin') state.pinError = true;
           break; // try again later
@@ -387,20 +397,26 @@
   async function refreshBanner() {
     let n = 0;
     try { n = (await DB.all()).length; } catch (e) { /* ignore */ }
-    const b = $('queue-banner');
-    let msg = '', cls = 'banner';
-    if (state.pinError && n) { msg = `Upload rejected: ask for the new team code and enter it in Settings (${n} waiting)`; cls += ' err'; }
-    else if (state.uploading && state.uploadProgress) msg = state.uploadProgress;
-    else if (n) msg = navigator.onLine === false
-      ? `${n} photo${n > 1 ? 's' : ''} waiting. Will upload when you have signal`
-      : `${n} photo${n > 1 ? 's' : ''} waiting to upload`;
-    b.hidden = !msg; b.textContent = msg; b.className = cls;
+    const plural = `${n} photo${n > 1 ? 's' : ''}`;
+    let msg, kind, icon;
+    if (state.pinError && n) { msg = `Upload rejected. Enter the new team code in Settings (${plural} waiting)`; kind = 'error'; icon = 'i-alert'; }
+    else if (state.uploading && state.uploadProgress) { msg = state.uploadProgress; kind = 'uploading'; icon = 'i-cloud'; }
+    else if (n) {
+      msg = navigator.onLine === false ? `${plural} waiting. Will upload when you have signal` : `${plural} waiting to upload`;
+      kind = 'pending'; icon = 'i-cloud';
+    } else if (!flowUrl()) { msg = 'Not connected to SharePoint'; kind = 'pending'; icon = 'i-alert'; }
+    else { msg = 'All photos uploaded'; kind = 'ok'; icon = 'i-check'; }
+    $('sync').className = 'sync ' + kind;
+    $('sync-ic').innerHTML = `<use href="#${icon}"/>`;
+    $('queue-banner').textContent = msg;
     $('set-queue').textContent = n ? `${n} photo${n > 1 ? 's' : ''} waiting to upload.` : 'All photos uploaded.';
   }
 
   // ---------- screens
 
   function goHome() {
+    tickClock();
+    if (!state.clockTimer) state.clockTimer = setInterval(tickClock, 1000);
     show('home');
     startGeo();
     initCompass();
@@ -427,14 +443,15 @@
     $('setup-save').onclick = async () => {
       const name = $('setup-name').value.trim();
       const code = $('setup-code').value.trim();
-      if (!name) { $('setup-err').textContent = 'Please enter your name.'; return; }
-      if (!code) { $('setup-err').textContent = 'Please enter the team code.'; return; }
+      const fail = msg => { $('setup-err').textContent = msg; UI.shake($('setup-form')); };
+      if (!name) { fail('Please enter your name.'); return; }
+      if (!code) { fail('Please enter the team code.'); return; }
       requestCompass(); // needs the tap, so before any await
       $('setup-err').textContent = '';
       busy('Checking code…');
       const ok = await connect(code);
       busy(null);
-      if (!ok) { $('setup-err').textContent = 'Wrong team code. Check it and try again.'; return; }
+      if (!ok) { fail('Wrong team code. Check it and try again.'); return; }
       store.set('name', name);
       refreshMode();
       goHome();
@@ -466,11 +483,11 @@
       try {
         await DB.put(c.item);
       } catch (e) {
-        toast('Could not save photo for upload. Use "Save a copy" instead.', 4000);
+        toast('Could not save photo for upload. Use "Save a copy" instead.', { ms: 4000, error: true });
         return;
       }
       clearPreview(); show('home');
-      toast('Saved. Uploading…');
+      toast('Saved. Uploading…', { icon: 'i-cloud' });
       refreshBanner();
       processQueue();
     };
@@ -486,9 +503,9 @@
     $('close-settings').onclick = () => show('home');
     $('set-save').onclick = async () => {
       const name = $('set-name').value.trim();
-      if (!name) { toast('Name cannot be empty'); return; }
+      if (!name) { toast('Name cannot be empty', { error: true }); return; }
       const code = $('set-code').value.trim();
-      if (code && !(await connect(code))) { toast('Wrong team code', 3500); return; }
+      if (code && !(await connect(code))) { toast('Wrong team code', { ms: 3500, error: true }); return; }
       store.set('name', name);
       $('set-code').value = '';
       state.pinError = false;

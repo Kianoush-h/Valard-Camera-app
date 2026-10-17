@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Valard Camera</title>
-<meta name="theme-color" content="#1f1f1f">
+<meta name="theme-color" content="#141414">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -16,88 +16,163 @@
 </head>
 <body>
 
+<!-- Icon sprite (Lucide, 24px grid, 2px stroke) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M12 13v8"/><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="m8 17 4-4 4 4"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-retake" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/><circle cx="16.5" cy="7.5" r=".5"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  </defs>
+</svg>
+
 <!-- One-time setup -->
 <section id="setup" class="screen" hidden>
-  <div class="card">
-    <img src="icons/icon-192.png" class="logo" alt="">
-    <h1><b class="red">Valard</b> Camera</h1>
-    <p class="muted">One-time setup. Your name is stamped on every photo.</p>
-    <label>Your name
-      <input id="setup-name" autocomplete="name" placeholder="e.g. Kia H">
-    </label>
-    <label>Team code
-      <input id="setup-code" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="From Kianoush">
-    </label>
-    <button id="setup-save" class="btn primary">Get started</button>
-    <p id="setup-err" class="err"></p>
+  <div class="setup-hero" data-enter>
+    <div class="wordmark big"><span class="wm-bar"></span>VALARD<small>CAMERA</small></div>
+    <p class="lead">Site photos with time, GPS and address stamped on, uploaded to SharePoint automatically.</p>
   </div>
-  <p class="credit app-credit"></p>
+  <form class="card form" id="setup-form" data-enter onsubmit="return false">
+    <label class="field" for="setup-name">
+      <span class="field-label">Your name</span>
+      <span class="input-wrap"><svg class="ic"><use href="#i-user"/></svg>
+        <input id="setup-name" autocomplete="name" autocapitalize="words" placeholder="e.g. Kia H"></span>
+      <span class="hint">Printed on every photo you take.</span>
+    </label>
+    <label class="field" for="setup-code">
+      <span class="field-label">Team code</span>
+      <span class="input-wrap"><svg class="ic"><use href="#i-key"/></svg>
+        <input id="setup-code" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="From Kianoush">
+        <button type="button" class="reveal" data-reveal="setup-code" aria-label="Show code"><svg class="ic"><use href="#i-eye"/></svg></button></span>
+    </label>
+    <p id="setup-err" class="err" role="alert"></p>
+    <button id="setup-save" class="btn primary block" type="submit">Get started</button>
+  </form>
+  <p class="credit app-credit" data-enter></p>
 </section>
 
 <!-- Home / capture -->
 <section id="home" class="screen" hidden>
-  <header class="topbar">
-    <div class="brand"><b>Valard</b> Camera</div>
-    <button id="open-settings" class="icon-btn" aria-label="Settings">
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-    </button>
+  <header class="topbar" data-enter>
+    <div class="wordmark"><span class="wm-bar"></span>VALARD<small>CAMERA</small></div>
+    <button id="open-settings" class="icon-btn" aria-label="Settings"><svg class="ic"><use href="#i-gear"/></svg></button>
   </header>
 
-  <div class="status">
-    <div class="row"><span class="dot" id="gps-dot"></span><span id="gps-text">Finding location…</span></div>
-    <div class="row addr" id="addr-text"></div>
-    <div class="row"><span id="compass-text">Compass: waiting…</span>
-      <button id="compass-enable" class="chip" hidden>Enable compass</button></div>
+  <div class="clock" data-enter aria-live="off">
+    <div class="clock-hello" id="hello"></div>
+    <div class="clock-time" id="clock-time">--:--:--</div>
+    <div class="clock-date" id="clock-date"></div>
   </div>
 
-  <div class="banner" id="queue-banner" hidden></div>
+  <div class="card loc" data-enter>
+    <div class="loc-head">
+      <div class="loc-icon"><svg class="ic"><use href="#i-pin"/></svg></div>
+      <div class="loc-text">
+        <div class="addr" id="addr-text">Finding address…</div>
+        <div class="coords" id="coords-text">Waiting for GPS</div>
+      </div>
+    </div>
+    <div class="chips">
+      <div class="chip-stat"><span class="dot" id="gps-dot"></span><span id="gps-text">GPS searching</span></div>
+      <div class="chip-stat compass-chip">
+        <svg class="dial" viewBox="0 0 40 40" aria-hidden="true">
+          <circle cx="20" cy="20" r="18" class="dial-ring"/>
+          <g id="dial-rose">
+            <path d="M20 5 L23 20 L20 18 L17 20 Z" class="dial-n"/>
+            <path d="M20 35 L17 20 L20 22 L23 20 Z" class="dial-s"/>
+          </g>
+        </svg>
+        <span id="compass-text">Compass</span>
+      </div>
+      <button id="compass-enable" class="chip-btn" hidden>Enable compass</button>
+    </div>
+  </div>
 
-  <div class="shutter-wrap">
-    <button id="shutter" class="shutter" aria-label="Take photo"><span></span></button>
-    <p class="muted">Tap to take a photo</p>
+  <div class="sync" id="sync" data-enter>
+    <svg class="ic sync-ic" id="sync-ic"><use href="#i-check"/></svg>
+    <span id="queue-banner">Ready</span>
+  </div>
+
+  <div id="testmode" class="card warn" hidden>
+    <svg class="ic"><use href="#i-alert"/></svg>
+    <span>Not connected. Enter the team code in Settings. Photos are saved to your phone for now.</span>
+  </div>
+
+  <div class="shutter-wrap" data-enter>
+    <button id="shutter" class="shutter" aria-label="Take photo">
+      <span class="shutter-halo"></span>
+      <span class="shutter-core"><svg class="ic"><use href="#i-camera"/></svg></span>
+    </button>
+    <p class="shutter-label">Take photo</p>
   </div>
 
   <p class="credit app-credit"></p>
-  <div id="testmode" class="testmode" hidden>NOT CONNECTED: enter the team code in Settings. Photos are saved to your phone for now.</div>
 </section>
 
 <!-- Preview / approve -->
-<section id="preview" class="screen" hidden>
+<section id="preview" class="screen dark" hidden>
   <div class="preview-img"><img id="preview-img" alt="Stamped photo preview"></div>
-  <div class="preview-actions">
-    <button id="retake" class="btn">Retake</button>
-    <button id="approve" class="btn primary">Approve &amp; upload</button>
+  <div class="sheet" id="preview-sheet">
+    <div class="sheet-dest"><svg class="ic"><use href="#i-folder"/></svg><span id="preview-dest">Photos</span></div>
+    <div class="preview-actions">
+      <button id="retake" class="btn"><svg class="ic"><use href="#i-retake"/></svg>Retake</button>
+      <button id="approve" class="btn primary"><svg class="ic"><use href="#i-cloud"/></svg>Approve &amp; upload</button>
+    </div>
+    <button id="save-copy" class="link-btn"><svg class="ic"><use href="#i-download"/></svg>Save a copy to my phone</button>
   </div>
-  <button id="save-copy" class="link-btn">Save a copy to my phone</button>
 </section>
 
 <!-- Settings -->
 <section id="settings" class="screen" hidden>
-  <header class="topbar">
-    <button id="close-settings" class="link-btn back">‹ Back</button>
-    <div class="brand">Settings</div>
-    <span></span>
+  <header class="topbar" data-enter>
+    <button id="close-settings" class="icon-btn back" aria-label="Back"><svg class="ic"><use href="#i-back"/></svg></button>
+    <div class="topbar-title">Settings</div>
+    <span class="icon-btn-spacer"></span>
   </header>
-  <div class="card">
-    <label>Your name <input id="set-name" autocomplete="name"></label>
-    <label>New team code (only if asked to change it)
-      <input id="set-code" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Leave empty to keep the current one">
+  <form class="card form" data-enter onsubmit="return false">
+    <label class="field" for="set-name">
+      <span class="field-label">Your name</span>
+      <span class="input-wrap"><svg class="ic"><use href="#i-user"/></svg><input id="set-name" autocomplete="name" autocapitalize="words"></span>
     </label>
-    <button id="set-save" class="btn primary">Save</button>
-    <hr>
-    <p id="set-queue" class="muted"></p>
-    <button id="set-retry" class="btn">Upload waiting photos now</button>
-    <p class="muted small" id="set-version"></p>
+    <label class="field" for="set-code">
+      <span class="field-label">New team code</span>
+      <span class="input-wrap"><svg class="ic"><use href="#i-key"/></svg>
+        <input id="set-code" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Leave empty to keep current">
+        <button type="button" class="reveal" data-reveal="set-code" aria-label="Show code"><svg class="ic"><use href="#i-eye"/></svg></button></span>
+      <span class="hint">Only needed if Kianoush sends you a new code.</span>
+    </label>
+    <button id="set-save" class="btn primary block" type="submit">Save</button>
+  </form>
+  <div class="card" data-enter>
+    <div class="row-between"><span class="field-label">Uploads</span><span id="set-queue" class="muted"></span></div>
+    <button id="set-retry" class="btn block">Upload waiting photos now</button>
   </div>
-  <p class="credit app-credit"></p>
+  <p class="muted small center" id="set-version" data-enter></p>
+  <p class="credit app-credit" data-enter></p>
 </section>
 
-<div id="busy" class="busy" hidden><div class="spinner"></div><p id="busy-text">Stamping photo…</p></div>
-<div id="toast" class="toast" hidden></div>
+<div id="busy" class="busy" hidden>
+  <div class="busy-card">
+    <svg class="ring" viewBox="0 0 50 50" aria-hidden="true"><circle cx="25" cy="25" r="20"/></svg>
+    <p id="busy-text">Stamping photo…</p>
+  </div>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 <input id="camera-input" type="file" accept="image/*" capture="environment" hidden>
 
+<script src="vendor/gsap.min.js"></script>
 <script src="config.js"></script>
 <script src="stamp.js"></script>
+<script src="ui.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
