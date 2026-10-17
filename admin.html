@@ -159,10 +159,30 @@
     }));
   }
 
+  // Plain-language reasons for GitHub API failures.
+  function ghError(status, detail) {
+    const why = {
+      401: 'The token is not valid (expired, revoked or not copied fully). Create a new one and paste it again.',
+      403: 'The token is missing permission. Edit it on GitHub: Permissions › Repository › Contents: Read and write.',
+      404: 'The token cannot see the Valard-Camera-app repo. Edit it on GitHub: Repository access › Only select repositories › Valard-Camera-app.',
+      409: 'GitHub reported a conflict. Wait a few seconds and save again.',
+      422: 'GitHub rejected the file. Try saving again.',
+    }[status];
+    return new Error(`GitHub error ${status}. ` + (why || (detail || '').slice(0, 160)));
+  }
+
+  // Confirms the token can read the repo before anything is saved.
+  async function checkToken() {
+    const r = await fetch(`https://api.github.com/repos/${REPO}`, {
+      headers: { Authorization: 'Bearer ' + session.token, Accept: 'application/vnd.github+json' },
+    });
+    if (!r.ok) throw ghError(r.status, await r.text());
+  }
+
   async function readRepoFile(path) {
     const r = await gh(path + '?ref=main&t=' + Date.now());
     if (r.status === 404) return null;
-    if (!r.ok) throw new Error(`GitHub ${r.status}: check the token`);
+    if (!r.ok) throw ghError(r.status, await r.text());
     const j = await r.json();
     return { sha: j.sha, text: decodeURIComponent(escape(atob(j.content.replace(/\n/g, '')))) };
   }
@@ -173,7 +193,7 @@
       method: 'PUT',
       body: JSON.stringify({ message, content: b64utf8(text), branch: 'main', sha: cur ? cur.sha : undefined }),
     });
-    if (!r.ok) throw new Error(`GitHub ${r.status}: ${(await r.text()).slice(0, 160)}`);
+    if (!r.ok) throw ghError(r.status, await r.text());
   }
 
   // ---------- views
@@ -249,10 +269,12 @@
   $('setup-btn').onclick = async () => {
     const token = $('token').value.trim();
     $('setup-err').textContent = '';
-    if (!/^(github_pat_|ghp_)\S+$/.test(token)) { $('setup-err').textContent = 'Paste the token that starts with github_pat_'; return; }
-    $('setup-btn').disabled = true; $('setup-btn').textContent = 'Saving…';
+    if (!/^(github_pat_|ghp_)\S+$/.test(token)) { $('setup-err').textContent = 'Paste the whole token. It starts with github_pat_ (no spaces).'; return; }
+    $('setup-btn').disabled = true; $('setup-btn').textContent = 'Checking token…';
     try {
       session.token = token;
+      await checkToken();
+      $('setup-btn').textContent = 'Saving…';
       await save('Set up admin');
       view('main'); render();
     } catch (e) {
