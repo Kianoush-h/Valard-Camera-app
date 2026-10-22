@@ -273,6 +273,35 @@
     return { id: Date.now() + '-' + rand, created: Date.now(), folder, filename, blob, meta };
   }
 
+  const MAX_BYTES = 2 * 1024 * 1024;
+  const toJpeg = (cv, q) => new Promise((res, rej) => cv.toBlob(
+    b => b ? res(b) : rej(new Error('Could not create image')), 'image/jpeg', q));
+
+  function scaled(cv, maxW) {
+    const k = Math.min(1, maxW / cv.width);
+    const s = document.createElement('canvas');
+    s.width = Math.round(cv.width * k); s.height = Math.round(cv.height * k);
+    s.getContext('2d').drawImage(cv, 0, 0, s.width, s.height);
+    return s;
+  }
+
+  // Best-quality JPEG under 2 MB: lower the quality first, then shrink 15% at a time.
+  async function encodeUnder2MB(canvas) {
+    let cv = canvas, blob;
+    for (;;) {
+      for (const q of [CFG.JPEG_QUALITY || 0.9, 0.8, 0.7, 0.6]) {
+        blob = await toJpeg(cv, q);
+        if (blob.size <= MAX_BYTES) break;
+      }
+      if (blob.size <= MAX_BYTES || cv.width < 1200) break;
+      const next = scaled(cv, cv.width * 0.85);
+      if (cv !== canvas) cv.width = cv.height = 0;
+      cv = next;
+    }
+    if (cv !== canvas) cv.width = cv.height = 0;
+    return blob;
+  }
+
   async function processPhoto(file) {
     busy('Stamping photo…');
     let img = null;
@@ -294,11 +323,14 @@
       const canvas = Stamp.render(img, {
         taken, network, lat, lon, heading: state.shotHeading, address, map, user: settings().name,
       });
-      const blob = await new Promise((res, rej) => canvas.toBlob(
-        b => b ? res(b) : rej(new Error('Could not create image')), 'image/jpeg', CFG.JPEG_QUALITY || 0.9));
+      const blob = await encodeUnder2MB(canvas);
+      const small = scaled(canvas, 720);
+      const thumb = await toJpeg(small, 0.72); // kept 48 h for the Recent photos list
+      small.width = small.height = 0;
       canvas.width = canvas.height = 0; // release memory on iOS
 
       const item = makeItem(blob, taken, pos, address);
+      item.thumb = thumb;
       const url = URL.createObjectURL(blob);
       state.current = { blob, url, item };
       $('preview-img').src = url;
@@ -393,14 +425,16 @@
     if (state.uploading || !flowUrl()) return;
     state.uploading = true;
     try {
-      const items = (await DB.all()).sort((a, b) => a.created - b.created);
+      const items = (await DB.all()).filter(it => it.status !== 'uploaded').sort((a, b) => a.created - b.created);
       for (let i = 0; i < items.length; i++) {
         if (navigator.onLine === false) break;
         state.uploadProgress = `Uploading ${i + 1} of ${items.length}…`;
+        state.uploadingId = items[i].id;
         refreshBanner();
         const res = await upload(items[i]);
         if (res === 'ok') {
-          await DB.del(items[i].id);
+          // keep a thumbnail for the history list; drop the full photo
+          await DB.put(Object.assign(items[i], { status: 'uploaded', uploadedAt: Date.now(), blob: null }));
           state.pinError = false;
           toast('Uploaded to SharePoint');
           UI.pop($('sync-ic'));
@@ -413,14 +447,21 @@
       /* IndexedDB problem; retry later */
     } finally {
       state.uploading = false;
+      state.uploadingId = null;
       state.uploadProgress = '';
       refreshBanner();
     }
   }
 
   async function refreshBanner() {
-    let n = 0;
-    try { n = (await DB.all()).length; } catch (e) { /* ignore */ }
+    let items = [];
+    try { items = await DB.all(); } catch (e) { /* ignore */ }
+    // Uploaded photos stay listed for 48 h; unsent photos are never removed.
+    const cutoff = Date.now() - 48 * 3600e3;
+    for (const it of items) if (it.status === 'uploaded' && it.created < cutoff) DB.del(it.id).catch(() => {});
+    items = items.filter(it => it.status !== 'uploaded' || it.created >= cutoff);
+    renderRecent(items);
+    const n = items.filter(it => it.status !== 'uploaded').length;
     const plural = `${n} photo${n > 1 ? 's' : ''}`;
     let msg, kind, icon;
     if (state.pinError && n) { msg = `Upload rejected: your PIN is not active in the flow (${plural} waiting)`; kind = 'error'; icon = 'i-alert'; }
@@ -434,6 +475,72 @@
     $('sync-ic').innerHTML = `<use href="#${icon}"/>`;
     $('queue-banner').textContent = msg;
     $('set-queue').textContent = n ? `${n} photo${n > 1 ? 's' : ''} waiting to upload.` : 'All photos uploaded.';
+  }
+
+  // ---------- recent photos (last 48 h) and photo popup
+
+  const thumbUrls = new Map();
+  const fmtTime = t => new Date(t).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).replace(/\u202f/g, ' ');
+  function fmtWhen(t) {
+    const d = new Date(t);
+    const day = d.toDateString() === new Date().toDateString() ? 'Today'
+      : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    return `${day}, ${fmtTime(t)}`;
+  }
+  const takenAt = it => (it.meta && it.meta.takenAt ? Date.parse(it.meta.takenAt) : it.created);
+
+  function statusOf(it) {
+    if (it.status === 'uploaded') return { cls: 'ok', icon: 'i-check', text: 'Uploaded ' + fmtTime(it.uploadedAt) };
+    if (it.id === state.uploadingId) return { cls: 'busy', icon: 'i-cloud', text: 'Uploading…' };
+    if (state.pinError) return { cls: 'err', icon: 'i-alert', text: 'Rejected: PIN not active' };
+    return { cls: 'wait', icon: 'i-cloud', text: navigator.onLine === false ? 'Waiting for signal' : 'Waiting to upload' };
+  }
+
+  function thumbUrl(it) {
+    if (!thumbUrls.has(it.id)) {
+      const b = it.thumb || it.blob;
+      thumbUrls.set(it.id, b ? URL.createObjectURL(b) : '');
+    }
+    return thumbUrls.get(it.id);
+  }
+
+  function setStatus(el, st) {
+    el.className = 'recent-status ' + st.cls;
+    el.innerHTML = `<svg class="ic"><use href="#${st.icon}"/></svg><span></span>`;
+    el.lastChild.textContent = st.text;
+  }
+
+  function renderRecent(items) {
+    items = items.slice().sort((a, b) => b.created - a.created);
+    const live = new Set(items.map(it => it.id));
+    for (const [id, u] of thumbUrls) if (!live.has(id)) { if (u) URL.revokeObjectURL(u); thumbUrls.delete(id); }
+    $('recent-count').textContent = items.length ? `· ${items.length}` : '';
+    const list = $('recent-list');
+    list.textContent = '';
+    if (!items.length) {
+      list.innerHTML = '<li class="recent-empty">Photos you take show up here for 48 hours.</li>';
+      return;
+    }
+    for (const it of items) {
+      const st = statusOf(it);
+      const li = document.createElement('li');
+      li.innerHTML = '<button class="recent-item" type="button"><img alt=""><span class="recent-text">'
+        + '<span class="recent-when"></span><span class="recent-status"></span></span></button>';
+      li.querySelector('img').src = thumbUrl(it);
+      li.querySelector('.recent-when').textContent = fmtWhen(takenAt(it));
+      setStatus(li.querySelector('.recent-status'), st);
+      li.querySelector('button').setAttribute('aria-label', `Photo ${fmtWhen(takenAt(it))}, ${st.text}`);
+      li.querySelector('button').onclick = () => openPhoto(it, st);
+      list.appendChild(li);
+    }
+  }
+
+  function openPhoto(it, st) {
+    $('photo-img').src = thumbUrl(it);
+    $('photo-when').textContent = fmtWhen(takenAt(it));
+    setStatus($('photo-status'), st);
+    $('photo-dest').textContent = `Photos › ${it.folder}`;
+    UI.modal('photo', true);
   }
 
   // ---------- screens
@@ -548,6 +655,11 @@
       processQueue();
     };
     $('set-retry').onclick = () => { state.pinError = false; processQueue(); };
+
+    const closePhoto = () => UI.modal('photo', false);
+    $('photo-close').onclick = closePhoto;
+    $('photo').onclick = e => { if (e.target === $('photo')) closePhoto(); };
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closePhoto(); });
 
     window.addEventListener('online', processQueue);
     document.addEventListener('visibilitychange', () => {

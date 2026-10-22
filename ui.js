@@ -76,10 +76,10 @@
     clearTimeout(toastTimer);
     if (animate()) {
       gsap.killTweensOf(t);
-      gsap.fromTo(t, { y: 30, autoAlpha: 0, scale: 0.96 }, { y: 0, autoAlpha: 1, scale: 1, duration: 0.4, ease: 'back.out(1.6)' });
+      gsap.fromTo(t, { y: -30, autoAlpha: 0, scale: 0.96 }, { y: 0, autoAlpha: 1, scale: 1, duration: 0.4, ease: 'back.out(1.6)' });
     }
     toastTimer = setTimeout(() => {
-      if (animate()) gsap.to(t, { y: 20, autoAlpha: 0, duration: 0.2, ease: 'power2.in', onComplete: () => { t.hidden = true; } });
+      if (animate()) gsap.to(t, { y: -20, autoAlpha: 0, duration: 0.2, ease: 'power2.in', onComplete: () => { t.hidden = true; } });
       else t.hidden = true;
     }, o.ms || 2800);
   }
@@ -99,6 +99,23 @@
     } else if (!b.hidden) {
       if (animate()) gsap.to(b, { autoAlpha: 0, duration: 0.15, onComplete: () => { b.hidden = true; gsap.set(b, { clearProps: 'all' }); } });
       else b.hidden = true;
+    }
+  }
+
+  // ---------- popup (photo viewer)
+
+  function modal(id, open) {
+    const m = $(id);
+    if (open) {
+      m.hidden = false;
+      if (animate()) {
+        gsap.killTweensOf(m);
+        gsap.fromTo(m, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.2 });
+        gsap.fromTo(m.firstElementChild, { y: 40, scale: 0.96 }, { y: 0, scale: 1, duration: 0.35, ease: 'back.out(1.4)', clearProps: 'transform' });
+      }
+    } else if (!m.hidden) {
+      if (animate()) gsap.to(m, { autoAlpha: 0, duration: 0.15, onComplete: () => { m.hidden = true; gsap.set(m, { clearProps: 'all' }); } });
+      else m.hidden = true;
     }
   }
 
@@ -166,5 +183,5 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 
-  window.UI = { go, toast, busy, setHeading, shake, pop, updateText };
+  window.UI = { go, toast, busy, modal, setHeading, shake, pop, updateText };
 })();

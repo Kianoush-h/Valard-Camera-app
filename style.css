@@ -128,15 +128,15 @@ button { font: inherit; color: inherit; touch-action: manipulation; cursor: poin
 .link-btn .ic { width: 18px; height: 18px; }
 
 /* ---------- home */
-.clock { padding: var(--s2) var(--s1) 0; }
+.clock { padding: 0 var(--s1); }
 .clock-hello { color: var(--muted); font-size: 15px; font-weight: 600; min-height: 1.4em; }
 .clock-time {
-  font-size: clamp(44px, 15vw, 64px); font-weight: 800; letter-spacing: -.03em; line-height: 1.05;
+  font-size: clamp(34px, 10vw, 46px); font-weight: 800; letter-spacing: -.03em; line-height: 1.05;
   font-variant-numeric: tabular-nums;
 }
 .clock-date { color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
 
-.loc { gap: var(--s4); }
+.loc { gap: var(--s3); padding: var(--s3) var(--s4); }
 .loc-head { display: flex; gap: var(--s3); align-items: flex-start; }
 .loc-icon { width: 44px; height: 44px; border-radius: 14px; background: var(--red-soft); color: var(--red); display: grid; place-items: center; flex: none; }
 .loc-text { min-width: 0; }
@@ -167,7 +167,7 @@ button { font: inherit; color: inherit; touch-action: manipulation; cursor: poin
 .dial-s { fill: #d0d0d0; }
 
 .sync {
-  display: flex; align-items: center; gap: 10px; padding: 12px var(--s4); min-height: 48px;
+  display: flex; align-items: center; gap: 10px; padding: 10px var(--s4); min-height: 44px;
   border-radius: var(--r-md); background: var(--surface); border: 1px solid var(--line);
   font-size: 15px; font-weight: 600;
 }
@@ -223,7 +223,7 @@ button { font: inherit; color: inherit; touch-action: manipulation; cursor: poin
 
 .toast {
   position: fixed; left: 16px; right: 16px; z-index: 50; margin: 0 auto; width: max-content; max-width: calc(100% - 32px);
-  bottom: calc(env(safe-area-inset-bottom) + 24px);
+  top: calc(env(safe-area-inset-top) + 12px);
   display: flex; align-items: center; gap: 10px;
   background: #fafafa; color: #111; font-weight: 700; font-size: 15px;
   padding: 12px 18px; border-radius: 999px; box-shadow: var(--shadow);
@@ -234,3 +234,51 @@ button { font: inherit; color: inherit; touch-action: manipulation; cursor: poin
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ---------- recent photos (last 48 h) */
+.recent { flex: 1 0 auto; display: flex; flex-direction: column; gap: var(--s2); }
+.recent-head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 var(--s1); }
+.recent-head h2 { margin: 0; font-size: 15px; font-weight: 700; }
+.recent-list {
+  list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s2);
+}
+.recent-item {
+  width: 100%; min-height: 80px; display: flex; align-items: center; gap: var(--s3); padding: 8px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-md); text-align: left;
+  transition: background .15s, transform .15s;
+}
+.recent-item:active { background: var(--surface-2); transform: scale(.98); }
+.recent-item img { width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: var(--surface-2); flex: none; }
+.recent-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.recent-when { font-weight: 700; font-size: 15px; }
+.recent-status { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; }
+.recent-status .ic { width: 16px; height: 16px; }
+.recent-status.ok { color: var(--good); }
+.recent-status.wait, .recent-status.busy { color: var(--ok); }
+.recent-status.err { color: var(--bad); }
+.recent-empty { color: var(--muted); font-size: 14px; text-align: center; padding: var(--s4); border: 1px dashed var(--line); border-radius: var(--r-md); }
+
+/* the page scrolls; the shutter stays big and pinned to the bottom */
+#home { padding-bottom: 0; }
+.shutter-wrap {
+  position: sticky; bottom: 0; z-index: 5; flex: none; min-height: 0;
+  margin: 0 calc(-1 * var(--s4)); padding: var(--s3) var(--s4) calc(env(safe-area-inset-bottom) + var(--s2));
+  background: var(--bg); box-shadow: 0 -18px 18px var(--bg);
+}
+.shutter-wrap .credit { margin: 0; padding-top: 2px; }
+.chips:has(#compass-enable:not([hidden])) .compass-chip { display: none; }
+
+/* ---------- photo popup */
+.modal {
+  position: fixed; inset: 0; z-index: 45; display: grid; place-items: center;
+  padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 16px);
+  background: rgba(0, 0, 0, .72); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.modal-card {
+  position: relative; width: 100%; max-width: 480px; max-height: 100%; display: flex; flex-direction: column;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow);
+}
+.modal-card img { display: block; width: 100%; max-height: 64vh; object-fit: contain; background: #000; }
+.modal-info { padding: var(--s4); display: flex; flex-direction: column; gap: var(--s2); }
+.modal-when { font-weight: 700; font-size: 17px; }
+.modal-close { position: absolute; top: 10px; right: 10px; z-index: 1; background: rgba(0, 0, 0, .55); border-color: rgba(255, 255, 255, .25); color: #fff; }
