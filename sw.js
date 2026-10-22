@@ -1,5 +1,5 @@
 // Offline support: serve app files from cache, refresh them in the background.
-const CACHE = 'valard-camera-v8';
+const CACHE = 'valard-camera-v9';
 const ASSETS = [
   './', 'index.html', 'style.css', 'app.js', 'stamp.js', 'ui.js', 'config.js', 'manifest.webmanifest', 'vendor/gsap.min.js',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',

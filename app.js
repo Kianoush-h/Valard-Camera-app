@@ -257,20 +257,28 @@
     });
   }
 
-  function makeItem(blob, taken, pos, address) {
-    const s = settings();
+  // Everything known at the moment of the shot. Stored with the raw photo so stamping can run later.
+  function shotContext(file) {
+    const taken = file.lastModified && Math.abs(Date.now() - file.lastModified) < 600000 ? file.lastModified : Date.now();
+    const p = state.pos && Date.now() - state.pos.timestamp < 30000 ? state.pos : null;
+    let network = null;
+    if (state.timeOffset !== null) network = Math.abs(state.timeOffset) >= 2000 ? taken + state.timeOffset : taken;
+    return {
+      taken, network, heading: state.shotHeading, user: settings().name,
+      pos: p ? { latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy } : null,
+    };
+  }
+
+  function makeItem(raw, ctx) {
+    const taken = new Date(ctx.taken);
     const folder = `${taken.getFullYear()}-${pad(taken.getMonth() + 1)}-${pad(taken.getDate())}`;
-    const who = (s.name || 'user').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'user';
+    const who = (ctx.user || 'user').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'user';
     const rand = Math.random().toString(36).slice(2, 6);
     const filename = `${folder}_${pad(taken.getHours())}${pad(taken.getMinutes())}${pad(taken.getSeconds())}_${who}_${rand}.jpg`;
-    const meta = { user: s.name, takenAt: taken.toISOString(), address: address.join(', ') };
-    if (pos) {
-      meta.latitude = pos.coords.latitude;
-      meta.longitude = pos.coords.longitude;
-      meta.accuracy = Math.round(pos.coords.accuracy);
-    }
-    if (typeof state.shotHeading === 'number') meta.heading = Math.round(state.shotHeading);
-    return { id: Date.now() + '-' + rand, created: Date.now(), folder, filename, blob, meta };
+    return {
+      id: Date.now() + '-' + rand, created: Date.now(), folder, filename,
+      status: 'stamping', raw, ctx, meta: { user: ctx.user, takenAt: taken.toISOString() },
+    };
   }
 
   const MAX_BYTES = 2 * 1024 * 1024;
@@ -302,26 +310,33 @@
     return blob;
   }
 
-  async function processPhoto(file) {
-    busy('Stamping photo…');
+  // Adds the stamp and compresses. One photo at a time: full-size canvases are heavy on iPhone.
+  let stampChain = Promise.resolve();
+  function stamp(raw, ctx) {
+    const job = stampChain.then(() => stampNow(raw, ctx));
+    stampChain = job.catch(() => {});
+    return job;
+  }
+
+  async function stampNow(raw, ctx) {
     let img = null;
     try {
-      const taken = new Date(file.lastModified && Math.abs(Date.now() - file.lastModified) < 600000 ? file.lastModified : Date.now());
-      const pos = await freshPosition();
-      const lat = pos ? pos.coords.latitude : undefined;
-      const lon = pos ? pos.coords.longitude : undefined;
+      let pos = ctx.pos;
+      if (!pos) {
+        const p = await freshPosition();
+        if (p) pos = { latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy };
+      }
+      const lat = pos ? pos.latitude : undefined;
+      const lon = pos ? pos.longitude : undefined;
       const [image, address, map] = await Promise.all([
-        loadImage(file),
+        loadImage(raw),
         pos ? addressFor(lat, lon) : Promise.resolve([]),
         pos ? Stamp.loadMap(lat, lon, ZOOM).catch(() => null) : Promise.resolve(null),
       ]);
       img = image;
-      let network = null;
-      if (state.timeOffset !== null && Math.abs(state.timeOffset) >= 2000) network = new Date(taken.getTime() + state.timeOffset);
-      else if (state.timeOffset !== null) network = taken;
-
+      const taken = new Date(ctx.taken);
       const canvas = Stamp.render(img, {
-        taken, network, lat, lon, heading: state.shotHeading, address, map, user: settings().name,
+        taken, network: ctx.network ? new Date(ctx.network) : null, lat, lon, heading: ctx.heading, address, map, user: ctx.user,
       });
       const blob = await encodeUnder2MB(canvas);
       const small = scaled(canvas, 720);
@@ -329,23 +344,61 @@
       small.width = small.height = 0;
       canvas.width = canvas.height = 0; // release memory on iOS
 
-      const item = makeItem(blob, taken, pos, address);
-      item.thumb = thumb;
-      const url = URL.createObjectURL(blob);
-      state.current = { blob, url, item };
-      $('preview-img').src = url;
-      $('preview-dest').textContent = `Photos › ${item.folder}`;
-      show('preview');
-    } catch (err) {
-      toast('Could not process photo: ' + err.message, { ms: 4000, error: true });
+      const meta = { user: ctx.user, takenAt: taken.toISOString(), address: address.join(', ') };
+      if (pos) { meta.latitude = lat; meta.longitude = lon; meta.accuracy = Math.round(pos.accuracy); }
+      if (typeof ctx.heading === 'number') meta.heading = Math.round(ctx.heading);
+      return { blob, thumb, meta };
     } finally {
       if (img) URL.revokeObjectURL(img.src);
-      busy(null);
     }
   }
 
+  // Saves the stamped result over the raw photo, then hands it to the upload queue.
+  const stampingIds = new Set();
+  function finishStamp(item, job) {
+    stampingIds.add(item.id);
+    job.then(r => DB.put(Object.assign(item, r, { status: 'pending', raw: null })))
+      .catch(() => DB.put(Object.assign(item, { status: 'failed' })).catch(() => {}))
+      .finally(() => { stampingIds.delete(item.id); refreshBanner(); processQueue(); });
+  }
+
+  // Photos approved before the app was closed resume stamping on the next launch.
+  async function resumeStamping() {
+    try {
+      for (const it of await DB.all()) {
+        if (it.status === 'stamping' && it.raw && !stampingIds.has(it.id)) finishStamp(it, stamp(it.raw, it.ctx));
+      }
+    } catch (e) { /* IndexedDB unavailable */ }
+  }
+
+  // Shows the photo straight away; the stamped version replaces it when ready.
+  function openPreview(file) {
+    clearPreview();
+    const ctx = shotContext(file);
+    const cur = { item: makeItem(file, ctx), urls: [URL.createObjectURL(file)], result: null };
+    cur.job = stamp(file, ctx);
+    cur.job.then(r => {
+      cur.result = r;
+      if (state.current !== cur) return;
+      const u = URL.createObjectURL(r.blob);
+      cur.urls.push(u);
+      $('preview-img').src = u;
+      $('preview-note').hidden = true;
+      $('save-copy').disabled = false;
+    }).catch(() => {
+      if (state.current === cur) $('preview-note').textContent = 'Could not add the stamp';
+    });
+    state.current = cur;
+    $('preview-img').src = cur.urls[0];
+    $('preview-dest').textContent = `Photos › ${cur.item.folder}`;
+    $('preview-note').textContent = 'Adding stamp…';
+    $('preview-note').hidden = false;
+    $('save-copy').disabled = true;
+    show('preview');
+  }
+
   function clearPreview() {
-    if (state.current) URL.revokeObjectURL(state.current.url);
+    if (state.current) state.current.urls.forEach(u => URL.revokeObjectURL(u));
     state.current = null;
     $('preview-img').removeAttribute('src');
   }
@@ -425,7 +478,7 @@
     if (state.uploading || !flowUrl()) return;
     state.uploading = true;
     try {
-      const items = (await DB.all()).filter(it => it.status !== 'uploaded').sort((a, b) => a.created - b.created);
+      const items = (await DB.all()).filter(it => !['uploaded', 'stamping', 'failed'].includes(it.status)).sort((a, b) => a.created - b.created);
       for (let i = 0; i < items.length; i++) {
         if (navigator.onLine === false) break;
         state.uploadProgress = `Uploading ${i + 1} of ${items.length}…`;
@@ -491,17 +544,21 @@
 
   function statusOf(it) {
     if (it.status === 'uploaded') return { cls: 'ok', icon: 'i-check', text: 'Uploaded ' + fmtTime(it.uploadedAt) };
-    if (it.id === state.uploadingId) return { cls: 'busy', icon: 'i-cloud', text: 'Uploading…' };
+    if (it.status === 'stamping') return { cls: 'active', icon: 'i-cloud', text: 'Adding stamp…' };
+    if (it.status === 'failed') return { cls: 'err', icon: 'i-alert', text: 'Could not add the stamp' };
+    if (it.id === state.uploadingId) return { cls: 'active', icon: 'i-cloud', text: 'Uploading…' };
     if (state.pinError) return { cls: 'err', icon: 'i-alert', text: 'Rejected: PIN not active' };
     return { cls: 'wait', icon: 'i-cloud', text: navigator.onLine === false ? 'Waiting for signal' : 'Waiting to upload' };
   }
 
+  const thumbKey = it => it.id + (it.thumb ? ':t' : ':r'); // new URL once the stamped thumbnail exists
   function thumbUrl(it) {
-    if (!thumbUrls.has(it.id)) {
-      const b = it.thumb || it.blob;
-      thumbUrls.set(it.id, b ? URL.createObjectURL(b) : '');
+    const k = thumbKey(it);
+    if (!thumbUrls.has(k)) {
+      const b = it.thumb || it.blob || it.raw;
+      thumbUrls.set(k, b ? URL.createObjectURL(b) : '');
     }
-    return thumbUrls.get(it.id);
+    return thumbUrls.get(k);
   }
 
   function setStatus(el, st) {
@@ -512,7 +569,7 @@
 
   function renderRecent(items) {
     items = items.slice().sort((a, b) => b.created - a.created);
-    const live = new Set(items.map(it => it.id));
+    const live = new Set(items.map(thumbKey));
     for (const [id, u] of thumbUrls) if (!live.has(id)) { if (u) URL.revokeObjectURL(u); thumbUrls.delete(id); }
     $('recent-count').textContent = items.length ? `· ${items.length}` : '';
     const list = $('recent-list');
@@ -552,6 +609,7 @@
     startGeo();
     initCompass();
     syncTime();
+    resumeStamping();
     processQueue();
     refreshBanner();
   }
@@ -607,32 +665,34 @@
     };
     $('camera-input').onchange = e => {
       const f = e.target.files && e.target.files[0];
-      if (f) processPhoto(f);
+      if (f) openPreview(f);
     };
 
     $('retake').onclick = () => { clearPreview(); $('shutter').click(); };
 
+    // Approve saves the photo on the phone first; stamping and uploading continue in the background.
     $('approve').onclick = async () => {
       const c = state.current;
       if (!c) return;
-      if (!flowUrl()) {
-        await saveToPhone(c.item);
-        clearPreview(); show('home');
-        return;
-      }
+      const item = c.item;
+      if (c.result) Object.assign(item, c.result, { status: 'pending', raw: null });
       try {
-        await DB.put(c.item);
+        await DB.put(item);
       } catch (e) {
-        toast('Could not save photo for upload. Use "Save a copy" instead.', { ms: 4000, error: true });
+        toast('Could not save the photo. Please try again.', { ms: 4000, error: true });
         return;
       }
       clearPreview(); show('home');
-      toast('Saved. Uploading…', { icon: 'i-cloud' });
+      toast('Saved. Uploading in the background', { icon: 'i-cloud' });
       refreshBanner();
-      processQueue();
+      if (c.result) processQueue();
+      else finishStamp(item, c.job);
     };
 
-    $('save-copy').onclick = () => { if (state.current) saveToPhone(state.current.item); };
+    $('save-copy').onclick = () => {
+      const c = state.current;
+      if (c && c.result) saveToPhone({ blob: c.result.blob, filename: c.item.filename });
+    };
 
     $('open-settings').onclick = () => {
       $('set-name').textContent = settings().name;
