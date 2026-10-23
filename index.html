@@ -22,6 +22,7 @@
     <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></symbol>
     <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
     <symbol id="i-camera" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></symbol>
+    <symbol id="i-video" viewBox="0 0 24 24"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></symbol>
     <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M12 13v8"/><path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="m8 17 4-4 4 4"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
     <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
@@ -112,18 +113,28 @@
   </section>
 
   <div class="shutter-wrap" data-enter>
-    <button id="shutter" class="shutter" aria-label="Take photo">
-      <span class="shutter-halo"></span>
-      <span class="shutter-core"><svg class="ic"><use href="#i-camera"/></svg></span>
-    </button>
-    <p class="shutter-label">Take photo</p>
+    <div class="capture-row">
+      <div class="capture">
+        <button id="video-btn" class="shutter video" aria-label="Record video">
+          <span class="shutter-core"><svg class="ic"><use href="#i-video"/></svg></span>
+        </button>
+        <p class="shutter-label">Video</p>
+      </div>
+      <div class="capture">
+        <button id="shutter" class="shutter" aria-label="Take photo">
+          <span class="shutter-halo"></span>
+          <span class="shutter-core"><svg class="ic"><use href="#i-camera"/></svg></span>
+        </button>
+        <p class="shutter-label">Photo</p>
+      </div>
+    </div>
     <p class="credit app-credit"></p>
   </div>
 </section>
 
 <!-- Preview / approve -->
 <section id="preview" class="screen dark" hidden>
-  <div class="preview-img"><img id="preview-img" alt="Stamped photo preview"></div>
+  <div class="preview-img"><img id="preview-img" alt="Stamped photo preview"><video id="preview-video" playsinline controls hidden></video></div>
   <div class="sheet" id="preview-sheet">
     <div class="sheet-dest"><svg class="ic"><use href="#i-folder"/></svg><span id="preview-dest">Photos</span><span id="preview-note" class="preview-note" hidden></span></div>
     <div class="preview-actions">
@@ -181,6 +192,7 @@
 </div>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 <input id="camera-input" type="file" accept="image/*" capture="environment" hidden>
+<input id="video-input" type="file" accept="video/*" capture="environment" hidden>
 
 <script src="vendor/gsap.min.js"></script>
 <script src="config.js"></script>

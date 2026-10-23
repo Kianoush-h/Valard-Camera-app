@@ -269,12 +269,12 @@
     };
   }
 
-  function makeItem(raw, ctx) {
+  function makeItem(raw, ctx, ext = 'jpg') {
     const taken = new Date(ctx.taken);
     const folder = `${taken.getFullYear()}-${pad(taken.getMonth() + 1)}-${pad(taken.getDate())}`;
     const who = (ctx.user || 'user').replace(/[^A-Za-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'user';
     const rand = Math.random().toString(36).slice(2, 6);
-    const filename = `${folder}_${pad(taken.getHours())}${pad(taken.getMinutes())}${pad(taken.getSeconds())}_${who}_${rand}.jpg`;
+    const filename = `${folder}_${pad(taken.getHours())}${pad(taken.getMinutes())}${pad(taken.getSeconds())}_${who}_${rand}.${ext}`;
     return {
       id: Date.now() + '-' + rand, created: Date.now(), folder, filename,
       status: 'stamping', raw, ctx, meta: { user: ctx.user, takenAt: taken.toISOString() },
@@ -397,15 +397,71 @@
     show('preview');
   }
 
+  // Videos are uploaded as recorded (no stamp). The flow accepts at most 100 MB per request and
+  // base64 adds a third, so 70 MB (about 1 minute at the iPhone default) is the limit.
+  const MAX_VIDEO_BYTES = 70 * 1024 * 1024;
+  const mb = n => (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + ' MB';
+
+  // First frame as a JPEG for the Recent list; null if the phone can't decode it.
+  function videoThumb(file) {
+    return new Promise(res => {
+      const v = document.createElement('video');
+      const url = URL.createObjectURL(file);
+      const done = b => { clearTimeout(t); v.removeAttribute('src'); URL.revokeObjectURL(url); res(b); };
+      const t = setTimeout(() => done(null), 8000);
+      v.muted = true; v.playsInline = true; v.preload = 'auto';
+      v.onloadedmetadata = () => { v.currentTime = Math.min(0.1, v.duration || 0); };
+      v.onseeked = () => {
+        try {
+          const c = document.createElement('canvas');
+          const k = Math.min(1, 720 / v.videoWidth);
+          c.width = Math.round(v.videoWidth * k); c.height = Math.round(v.videoHeight * k);
+          c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+          toJpeg(c, 0.72).then(done, () => done(null));
+        } catch (e) { done(null); }
+      };
+      v.onerror = () => done(null);
+      v.src = url;
+    });
+  }
+
+  function openVideo(file) {
+    if (file.size > MAX_VIDEO_BYTES) {
+      toast(`Video is too large (${mb(file.size)}). Keep it under about 1 minute.`, { ms: 5000, error: true });
+      return;
+    }
+    clearPreview();
+    const ctx = shotContext(file);
+    const ext = /mp4/.test(file.type) ? 'mp4' : 'mov';
+    const item = makeItem(file, ctx, ext);
+    item.kind = 'video';
+    const meta = Object.assign({}, item.meta, { kind: 'video' });
+    if (ctx.pos) { meta.latitude = ctx.pos.latitude; meta.longitude = ctx.pos.longitude; meta.accuracy = Math.round(ctx.pos.accuracy); }
+    const cur = { item, kind: 'video', urls: [URL.createObjectURL(file)], result: { blob: file, thumb: null, meta } };
+    cur.thumbJob = videoThumb(file);
+    state.current = cur;
+    $('preview-img').hidden = true;
+    $('preview-video').hidden = false;
+    $('preview-video').src = cur.urls[0];
+    $('preview-dest').textContent = `Photos › ${item.folder}`;
+    $('preview-note').textContent = `Video · ${mb(file.size)}`;
+    $('preview-note').hidden = false;
+    $('save-copy').disabled = false;
+    show('preview');
+  }
+
   function clearPreview() {
     if (state.current) state.current.urls.forEach(u => URL.revokeObjectURL(u));
     state.current = null;
     $('preview-img').removeAttribute('src');
+    $('preview-img').hidden = false;
+    const v = $('preview-video');
+    v.pause(); v.removeAttribute('src'); v.load(); v.hidden = true;
   }
 
   // Opens the iOS share sheet ("Save Image") or downloads as a fallback. Must run inside a tap.
   function saveToPhone(item) {
-    const file = new File([item.blob], item.filename, { type: 'image/jpeg' });
+    const file = new File([item.blob], item.filename, { type: item.blob.type || 'image/jpeg' });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       return navigator.share({ files: [file] }).catch(() => {});
     }
@@ -465,7 +521,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-      }, 180000);
+      }, Math.max(180000, item.blob.size / 100)); // ms: ~100 KB/s minimum
       if (r.ok) return 'ok';
       if (r.status === 401 || r.status === 403) return 'pin';
       return 'error';
@@ -555,7 +611,7 @@
   function thumbUrl(it) {
     const k = thumbKey(it);
     if (!thumbUrls.has(k)) {
-      const b = it.thumb || it.blob || it.raw;
+      const b = it.thumb || (it.kind === 'video' ? null : it.blob || it.raw);
       thumbUrls.set(k, b ? URL.createObjectURL(b) : '');
     }
     return thumbUrls.get(k);
@@ -581,7 +637,7 @@
     for (const it of items) {
       const st = statusOf(it);
       const li = document.createElement('li');
-      li.innerHTML = '<button class="recent-item" type="button"><img alt=""><span class="recent-text">'
+      li.innerHTML = '<button class="recent-item' + (it.kind === 'video' ? ' is-video' : '') + '" type="button"><img alt=""><span class="recent-text">'
         + '<span class="recent-when"></span><span class="recent-status"></span></span></button>';
       li.querySelector('img').src = thumbUrl(it);
       li.querySelector('.recent-when').textContent = fmtWhen(takenAt(it));
@@ -668,7 +724,21 @@
       if (f) openPreview(f);
     };
 
-    $('retake').onclick = () => { clearPreview(); $('shutter').click(); };
+    $('video-btn').onclick = () => {
+      state.shotHeading = state.heading !== null && Date.now() - state.headingAt < 5000 ? state.heading : null;
+      const input = $('video-input');
+      input.value = '';
+      input.click();
+    };
+    $('video-input').onchange = e => {
+      const f = e.target.files && e.target.files[0];
+      if (f) openVideo(f);
+    };
+
+    $('retake').onclick = () => {
+      const again = state.current && state.current.kind === 'video' ? 'video-btn' : 'shutter';
+      clearPreview(); $(again).click();
+    };
 
     // Approve saves the photo on the phone first; stamping and uploading continue in the background.
     $('approve').onclick = async () => {
@@ -676,6 +746,7 @@
       if (!c) return;
       const item = c.item;
       if (c.result) Object.assign(item, c.result, { status: 'pending', raw: null });
+      if (c.thumbJob) item.thumb = await Promise.race([c.thumbJob, new Promise(r => setTimeout(() => r(null), 1500))]);
       try {
         await DB.put(item);
       } catch (e) {
